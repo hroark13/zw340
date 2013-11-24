@@ -667,24 +667,6 @@ static struct sys_device soc_sys_device = {
 	.cls = &soc_sysdev_class,
 };
 
-#ifdef CONFIG_ZTE_PLATFORM
-
-extern int zte_is_secboot_mode(void);
-
-static ssize_t
-socinfo_show_zte_secboot_mode(struct sys_device *dev,
-			 struct sysdev_attribute *attr,
-			 char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%u\n", zte_is_secboot_mode());
-}
-
-static struct sysdev_attribute socinfo_zte_secboot_files[] = {
-	_SYSDEV_ATTR(zte_efuse_status, 0444, socinfo_show_zte_secboot_mode, NULL),
-};
-#endif
-
-
 #if 1
 static const char *socinfo_zte_hw_ver = NULL;
 
@@ -758,10 +740,7 @@ static int __init socinfo_init_sysdev(void)
 	socinfo_create_files(&soc_sys_device, socinfo_zte_board_id_files,
 				ARRAY_SIZE(socinfo_zte_board_id_files));
 #endif
-#ifdef CONFIG_ZTE_PLATFORM
-	socinfo_create_files(&soc_sys_device, socinfo_zte_secboot_files,
-				ARRAY_SIZE(socinfo_zte_secboot_files));
-#endif
+
 
 
 #if 1

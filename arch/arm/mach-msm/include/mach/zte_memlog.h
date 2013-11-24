@@ -55,7 +55,6 @@ typedef struct {
  unsigned int key_is_on;
  unsigned int rtc_alarm;
   struct smem_batt_chg_t batchginfo;
-  unsigned int secboot_enable;
 
 } smem_global;
 

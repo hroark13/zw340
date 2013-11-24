@@ -177,8 +177,6 @@ static struct platform_device ion_dev;
 #define PMIC_GPIO_HDMI_5V_EN_V3 32  /* PMIC GPIO for V3 H/W */
 #define PMIC_GPIO_HDMI_5V_EN_V2 39 /* PMIC GPIO for V2 H/W */
 
-static int g_zte_secboot_mode;
-
 #define ADV7520_I2C_ADDR	0x39
 
 #define FPGA_SDCC_STATUS       0x8E0001A8
@@ -8344,21 +8342,6 @@ extern void __init msm_init_pmic_vibrator(void);
 #ifdef CONFIG_ZTE_PLATFORM
 
 
-static void zte_get_secboot_value(void)
-{
-  smem_global *pglobal= ioremap(SMEM_LOG_GLOBAL_BASE, sizeof(smem_global));
-  g_zte_secboot_mode = pglobal->secboot_enable;
-  
-  printk(KERN_DEBUG "g_zte_secboot_mode: %d\n",g_zte_secboot_mode);
-}
-
-int zte_is_secboot_mode(void)
-{
-	return g_zte_secboot_mode;
-}
-
-EXPORT_SYMBOL(zte_is_secboot_mode);
-
 static void set_zte_board_id_type(void)
 {
        smem_global *global_tmp;
@@ -8418,7 +8401,6 @@ static void __init msm7x30_init(void)
 #ifdef CONFIG_ZTE_PLATFORM
 	zte_ftm_set_value(g_zte_ftm_flag_fixup);
        set_zte_board_id_type();
-      zte_get_secboot_value();
 
 #endif
 
