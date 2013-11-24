@@ -75,8 +75,6 @@ int syna_fwupdate_deinit(struct i2c_client *client);
 static const char ts_keys_size[] = "0x01:102:100:1061:200:74:0x01:139:300:1061:200:74:0x01:158:500:1061:200:74";
 #elif defined(CONFIG_MACH_ARTHUR)
 static const char ts_keys_size[] = "0x01:102:60:850:100:50:0x01:139:180:850:100:50:0x01:158:300:850:100:50:0x01:217:420:850:100:50";
-#elif defined(CONFIG_MACH_SEAN)
-static const char ts_keys_size[] = "0x01:102:40:510:100:60:0x01:139:120:510:100:60:0x01:158:200:510:100:60:0x01:217:280:510:100:60";
 #elif defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 /*ergate-003*/
 static const char ts_keys_size[] = "0x01:158:100:1024:100:60:0x01:102:270:1024:100:60:0x01:139:440:1024:100:60";
@@ -290,9 +288,9 @@ static int proc_write_val(struct file *file, const char *buffer,
 	msleep(500);
 	enable_irq(pgtsdata->client->irq);
 
-	//升级完成后需要对一些参数再做配置
-	//尤其是坐标系最大值的配置，否则会导致升级后触摸屏不可用
-	//后续需要添加其他机型的配置
+	//\C9\FD\BC\B6\CD\EA\B3珊\F3\D0\E8要\B6\D4一些\B2\CE\CA\FD\D4\D9\D7\F6\C5\E4\D6\C3
+	//\D3\C8\C6\E4\CA\C7\D7\F8\B1\EA系\D7\EE\B4\F3值\B5\C4\C5\E4\D6茫\AC\B7\F1\D4\F2\BB岬糪D6\C2\C9\FD\BC\B6\BA\F3\B4\A5\C3\FE\C6\C1\B2\BB\BF\C9\D3\C3
+	//\BA\F3\D0\F8\D0\E8要\CC\ED\BC\D3\C6\E4\CB\FB\BB\FA\D0偷\C4\C5\E4\D6\C3
 	ret = i2c_smbus_write_byte_data(pgtsdata->client, pgtsdata->f11.ctrl_base+2, 0x9);
 	if (ret<0) pr_err("i2c_smbus_write_byte_data failed\n");
 	ret = i2c_smbus_write_byte_data(pgtsdata->client, pgtsdata->f11.ctrl_base+3, 0x9);	
@@ -519,7 +517,7 @@ static int synaptics_rmi4_set_panel_state(
 	switch (state){
 	case TS_POWER_ON:
 		/*
-		 * ReportingMode = ‘001’: 
+		 * ReportingMode = \A1\AE001\A1\AF: 
 		 * Reduced reporting mode In this mode, the absolute data
 		 * source interrupt is asserted whenever a finger arrives 
 		 * or leaves. Fingers that are present but basically 
@@ -738,7 +736,7 @@ static int synaptics_rmi4_probe(
 	max_x=ts->max[0];
 #if defined (CONFIG_TOUCHSCREEN_VIRTUAL_KEYS)
 
-#if defined(CONFIG_MACH_SEAN)
+#if defined(CONFIG_MACH_ARTHUR)
 	max_y=1450;
 /*ergate-003*/
 #elif defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 

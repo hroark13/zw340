@@ -828,9 +828,9 @@ static struct pm8xxx_keypad_platform_data surf_keypad_data = {
 #if defined(CONFIG_MACH_WARP2)
 	.input_name		= "warp2_keypad",
 	.input_phys_device	= "warp2_keypad/input0",
-#elif defined(CONFIG_MACH_SEAN)
-	.input_name		= "sean_keypad",
-	.input_phys_device	= "sean_keypad/input0",
+#elif defined(CONFIG_MACH_ARTHUR)
+	.input_name		= "arthur_keypad",
+	.input_phys_device	= "arthur_keypad/input0",
 #elif defined(CONFIG_MACH_RADIANT)
 	.input_name		= "radiant_keypad",
 	.input_phys_device	= "radiant_keypad/input0",
@@ -1555,7 +1555,7 @@ static struct i2c_board_info msm_camera_boardinfo[] __initdata = {
 	},
 #endif
 #endif
-#if defined(CONFIG_MACH_SEAN) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
+#if defined(CONFIG_MACH_ARTHUR) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 #ifdef CONFIG_OV5640
     /*
      * Commented by zhang.shengjie
@@ -1574,7 +1574,7 @@ static struct i2c_board_info msm_camera_boardinfo[] __initdata = {
     //Do nothing
 #endif
 #endif
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 };
 
 #ifdef CONFIG_MSM_CAMERA
@@ -1724,7 +1724,7 @@ static void config_camera_off_gpios(void)
 	}
 }
 
-#if defined(CONFIG_MACH_SEAN) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
+#if defined(CONFIG_MACH_ARTHUR) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 
 #define MSM_CAMERA_POWER_BACKEND_DVDD_VAL       (1800)
 #define MSM_CAMERA_POWER_BACKEND_IOVDD_VAL      (1800)
@@ -2043,7 +2043,7 @@ int msm_camera_clk_switch(const struct msm_camera_sensor_info *data,
 
     return rc;
 }
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 struct resource msm_camera_resources[] = {
 	{
 		.start	= 0xA6000000,
@@ -2363,7 +2363,7 @@ static struct platform_device msm_camera_sensor_mt9m114 = {
 #endif
 #endif
 
-#if defined(CONFIG_MACH_SEAN) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
+#if defined(CONFIG_MACH_ARTHUR) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 #ifdef CONFIG_OV5640
 /*
  * Commented by zhang.shengjie
@@ -2404,7 +2404,7 @@ static struct platform_device msm_camera_sensor_ov5640 = {
 	},
 };
 #endif
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 #ifdef CONFIG_MSM_VPE
 static struct resource msm_vpe_resources[] = {
 	{
@@ -4499,7 +4499,7 @@ static struct msm_gpio lcdc_gpio_config_data[] = {
 
 #if defined(CONFIG_MACH_WARP2)
 	{ GPIO_CFG(120, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_ic_id" },
-#elif defined(CONFIG_MACH_SEAN)
+#elif defined(CONFIG_MACH_ARTHUR)
 	{ GPIO_CFG(120, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_ic_id" },
 #elif defined(CONFIG_MACH_RADIANT)
 	{ GPIO_CFG(120, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_ic_id" },
@@ -4511,7 +4511,7 @@ static struct msm_gpio lcdc_gpio_config_data[] = {
 	{ GPIO_CFG(122, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_spi_cs" },
 #if defined(CONFIG_MACH_WARP2)
 	{ GPIO_CFG(121, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_spi_sdi" },
-#elif defined(CONFIG_MACH_SEAN)
+#elif defined(CONFIG_MACH_ARTHUR)
 	{ GPIO_CFG(121, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_spi_sdi" },
 #elif defined(CONFIG_MACH_RADIANT)
 	{ GPIO_CFG(121, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), "lcd_spi_sdi" },
@@ -4559,7 +4559,7 @@ static struct msm_panel_common_pdata lcdc_panel_data = {
 static struct platform_device lcdc_panel_device = {
 #if defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 	.name   = "lcdc_panel_qhd",
-#elif defined(CONFIG_MACH_SEAN)
+#elif defined(CONFIG_MACH_ARTHUR)
 	.name   = "lcdc_panel_wvga",
 #endif
 	.id     = 0,
@@ -5559,14 +5559,14 @@ static struct msm_gpio lcd_panel_gpios[] = {
 	{ GPIO_CFG(23, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "lcdc_red0" },
 	{ GPIO_CFG(24, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "lcdc_red1" },
 	{ GPIO_CFG(25, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "lcdc_red2" },
-#if defined(CONFIG_MACH_SEAN)
+#if defined(CONFIG_MACH_ARTHUR)
 #ifndef CONFIG_SPI_QSD
 	{ GPIO_CFG(45, 0, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "spi_clk" },
 	{ GPIO_CFG(46, 0, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "spi_cs0" },
 	{ GPIO_CFG(47, 0, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "spi_mosi" },
 	{ GPIO_CFG(48, 0, GPIO_CFG_INPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "spi_miso" },
 #endif
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 
 	{ GPIO_CFG(90, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_6MA), "lcdc_pclk" },
 	{ GPIO_CFG(91, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_6MA), "lcdc_en" },
@@ -5590,7 +5590,7 @@ static struct msm_gpio lcd_panel_gpios[] = {
 	{ GPIO_CFG(109, 1, GPIO_CFG_OUTPUT,  GPIO_CFG_NO_PULL, GPIO_CFG_2MA), "lcdc_red7" },
 };
 
-#if defined(CONFIG_MACH_SEAN)
+#if defined(CONFIG_MACH_ARTHUR)
 #ifdef CONFIG_ZTE_PLATFORM
 // not used it
 #else
@@ -5681,7 +5681,7 @@ static int lcdc_sharp_panel_power(int on)
 	return rc;
 }
 #endif
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 
 static int lcdc_panel_power(int on)
 {
@@ -6700,7 +6700,7 @@ static struct platform_device *devices[] __initdata = {
 	&msm_camera_sensor_mt9m114,	
 #endif
 #endif
-#if defined(CONFIG_MACH_SEAN) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
+#if defined(CONFIG_MACH_ARTHUR) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 #ifdef CONFIG_OV5640
     /*
      * Commented by zh.shj
@@ -6710,7 +6710,7 @@ static struct platform_device *devices[] __initdata = {
      */
     &msm_camera_sensor_ov5640,
 #endif
-#endif // #if defined(CONFIG_MACH_SEAN)
+#endif // #if defined(CONFIG_MACH_ARTHUR)
 #ifdef CONFIG_VX6953
 	&msm_camera_sensor_vx6953,
 #endif
@@ -8929,125 +8929,16 @@ EXPORT_SYMBOL(get_ftm_from_tag);
 
 #endif
 
-static void __init msm7x30_fixup(struct tag *tags, char **cmdline,
-				 struct meminfo *mi)
-{
-#if 0 
-	for (; tags->hdr.size; tags = tag_next(tags)) {
-		if (tags->hdr.tag == ATAG_MEM && tags->u.mem.start ==
-							DDR1_BANK_BASE) {
-				ebi1_phys_offset = DDR1_BANK_BASE;
-				phys_add = DDR1_BANK_BASE;
-				break;
-		}
-	}
-#endif 
-}
-
-MACHINE_START(MSM7X30_SURF, "QCT MSM7X30 SURF")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-
-MACHINE_START(MSM7X30_FFA, "QCT MSM7X30 FFA")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-
-MACHINE_START(MSM7X30_FLUID, "QCT MSM7X30 FLUID")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-
-MACHINE_START(MSM8X55_SURF, "QCT MSM8X55 SURF")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-
-MACHINE_START(MSM8X55_FFA, "QCT MSM8X55 FFA")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-MACHINE_START(MSM8X55_SVLTE_SURF, "QCT MSM8X55 SVLTE SURF")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-MACHINE_START(MSM8X55_SVLTE_FFA, "QCT MSM8X55 SVLTE FFA")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-	.fixup = msm7x30_fixup,
-MACHINE_END
-MACHINE_START(WARP2, "ZTE WARP2")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
+MACHINE_START(ARTHUR, "ARTHUR")
+        .atag_offset = 0x100,
+        .map_io = msm7x30_map_io,
+        .reserve = msm7x30_reserve,
+        .init_irq = msm7x30_init_irq,
+        .init_machine = msm7x30_init,
+        .timer = &msm_timer,
+        .init_early = msm7x30_init_early,
+        .handle_irq = vic_handle_irq,
 #ifdef CONFIG_ZTE_PLATFORM
-	.fixup = zte_fixup,
-#endif
-MACHINE_END
-MACHINE_START(RADIANT, "ZTE RADIANT")
-	.atag_offset = 0x100,
-	.map_io = msm7x30_map_io,
-	.reserve = msm7x30_reserve,
-	.init_irq = msm7x30_init_irq,
-	.init_machine = msm7x30_init,
-	.timer = &msm_timer,
-	.init_early = msm7x30_init_early,
-	.handle_irq = vic_handle_irq,
-#ifdef CONFIG_ZTE_PLATFORM
-	.fixup = zte_fixup,
+        .fixup = zte_fixup,
 #endif
 MACHINE_END

@@ -266,8 +266,6 @@ static const char ts_keys_size[] = "0x01:102:100:1030:100:10:0x01:139:300:1030:1
 #elif defined(CONFIG_MACH_ARTHUR)
 static const char ts_keys_size[] =
 "0x01:139:60:845:80:30:0x01:102:180:845:80:30:0x01:158:300:845:80:30:0x01:217:420:845:80:30";
-#elif defined(CONFIG_MACH_SEAN)
-static const char ts_keys_size[] = "0x01:102:36:515:40:20:0x01:139:120:515:40:20:0x01:158:204:515:40:20:0x01:217:286:515:40:20";
 #elif defined(CONFIG_MACH_WARP2) || defined (CONFIG_MACH_RADIANT)
 static const char ts_keys_size[] = "0x01:102:36:515:40:20:0x01:139:120:515:40:20:0x01:158:204:515:40:20:0x01:217:286:515:40:20";
 #else
@@ -748,12 +746,12 @@ static void release_all_fingers(struct atmel_ts_data*ts)
 #ifdef TOUCH_LONG_SLIDE
 static int x_value;
 static int y_value;
-//是否取了起点的标志位
+//\CA欠\F1取\C1\CB\C6\F0\B5\E3\B5谋\EA志位
 // 0 no
 // 1 yes
 // 2 ok
 static uint8_t temp_flag=0;
-//是否滑动完成的标志位
+//\CA欠窕\AF\CD\EA\B3傻谋\EA志位
 // 0 no
 // 1 yes
 static uint8_t temp_flag2=0;
@@ -880,7 +878,7 @@ static void auto_cal_set(struct atmel_ts_data*ts,int val)
 			val);	
 }
 /*
-其实这个函数还控制了PALM校准
+\C6\E4实\D5\E2\B8\F6\BA\AF\CA\FD\BB\B9\BF\D8\D6\C6\C1\CBPALM校准
 */
 static void atch_cal_control(struct atmel_ts_data*ts,int on)
 {
@@ -888,7 +886,7 @@ static void atch_cal_control(struct atmel_ts_data*ts,int on)
 	printk(" atmel atch_cal_control:%d.    1:open 0:close\n",on);
 	if(on==1)//open
 	{
-		//原始值为打开负向校准
+		//原始值为\B4蚩\BA\CF\F2校准
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + 6, 
 			ts->config_setting[0].config_T8[6]);
@@ -920,7 +918,7 @@ static void atch_cal_control(struct atmel_ts_data*ts,int on)
 				get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + 8, 0);	
 			i2c_atmel_write_byte_data(ts->client,
 				get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + 9, 0);	
-			//降低检查校准OK时候负向出现的概率
+			//\BD\B5\B5图\EC\B2\E9校准OK时\BA\F2\B8\BA\CF\F2\B3\F6\CF值母\C5\C2\CA
 			i2c_atmel_write_byte_data(ts->client,
 				get_object_address(ts, TOUCH_MULTITOUCHSCREEN_T9) + 31,0);	
 
@@ -930,21 +928,21 @@ static void atch_cal_control(struct atmel_ts_data*ts,int on)
 }
 #ifdef ATMEL_NEW_CAL
 /*
-控制face和auto校准
+\BF\D8\D6\C6face\BA\CDauto校准
 */
 static void new_cal_control(struct atmel_ts_data*ts,int on)
 {
 	printk(" atmel new_cal_control:%d.    1:open 0:close\n",on);
 	if(on==1)//open
 	{
-		//原始值为打开各种校准
+		//原始值为\B4蚩\F7\D6\D6校准
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, PROCI_GRIPFACESUPPRESSION_T20), 
 			ts->config_setting[0].config_T20[0]);
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + 4, 
 			ts->config_setting[0].config_T8[4]);
-		//快漂开
+		//\BF\EC漂\BF\AA
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, NEW_CAL_T59), 
 			7);	
@@ -956,7 +954,7 @@ static void new_cal_control(struct atmel_ts_data*ts,int on)
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + 4, 
 			0);
-		//快漂关
+		//\BF\EC漂\B9\D8
 		i2c_atmel_write_byte_data(ts->client,
 			get_object_address(ts, NEW_CAL_T59), 
 			0);		
@@ -1184,10 +1182,10 @@ static void check_calibration(struct atmel_ts_data*ts)
 		get_object_address(ts, GEN_COMMANDPROCESSOR_T6) + 5, 0x01);
 
 	//20110531
-	//对于这个tch_ch=0的条件，还是有疑问的
-	//henk说不要这个条件，但没有这个条件的话，不能在第一时间对计时进行设置
-	//影响了校准OK的时间，从而影响了RELEASE ALL FINGERS的时间，导致错误的释放
-	//所以需要知道这个计时到底从什么时候开始
+	//\B6\D4\D3\DA\D5\E2\B8\F6tch_ch=0\B5\C4\CC\F5\BC\FE\A3\AC\BB\B9\CA\C7\D3\D0\D2\C9\CE实\C4
+	//henk说\B2\BB要\D5\E2\B8\F6\CC\F5\BC\FE\A3\AC\B5\AB没\D3\D0\D5\E2\B8\F6\CC\F5\BC\FE\B5幕\B0\A3\AC\B2\BB\C4\DC\D4诘\DA一时\BC\E4\B6约\C6时\BD\F8\D0\D0\C9\E8\D6\C3
+	//影\CF\EC\C1\CB校准OK\B5\C4时\BC洌琝B4佣\F8影\CF\EC\C1\CBRELEASE ALL FINGERS\B5\C4时\BC洌琝B5\BC\D6麓\ED\CE\F3\B5\C4\CA头\C5
+	//\CB\F9\D2\D4\D0\E8要知\B5\C0\D5\E2\B8\F6\BC\C6时\B5\BD\B5状\D3什么时\BA\F2\BF\AA始
 	if ((tch_ch>=0) && (atch_ch == 0)&&(tch_ch <40)) 
 	{
 		#ifdef TOUCH_LONG_SLIDE
@@ -1637,9 +1635,9 @@ static irqreturn_t atmel_ts_irq_handler(int irq, void *dev_id)
 #define QT602240_VER_22			22
 
 /* Firmware */
-//后续要区分224和140不同的FW 重要
-//7x30上暂时没有140的项目 7x30_4.1上n850为140的芯片
-//需要重点关注的是7X27和7X27A
+//\BA\F3\D0\F8要\C7\F8\B7\D6224\BA\CD140\B2\BB同\B5\C4FW \D6\D8要
+//7x30\C9\CF\D4\DD时没\D3\D0140\B5\C4\CF\EE目 7x30_4.1\C9\CFn850为140\B5\C4芯片
+//\D0\E8要\D6氐\E3\B9\D8注\B5\C4\CA\C77X27\BA\CD7X27A
 #define QT602240_FW_NAME_224		"mXT224C23_v1.1.09.enc"
 #define QT602240_FW_NAME_140		"mXT140C27_v1.0.01.enc"
 
@@ -1983,7 +1981,7 @@ static uint8_t qt602240_update_fw(uint8_t vol)
 	//unsigned int version;
 	int error;
 	update_result_flag=3;
-	#if 0 //这个版本判断暂时不要
+	#if 0 //\D5\E2\B8\F6\B0姹綷C5卸\CF\D4\DD时\B2\BB要
 	if (sscanf(buf, "%u", &version) != 1) {
 		dev_err(dev, "Invalid values\n");
 		return -EINVAL;
@@ -2159,7 +2157,7 @@ static uint8_t qt602240_update_fw_probe(uint8_t vol)
 	int error;
 	//update_result_flag=3;
 	
-	#if 0 //这个版本判断暂时不要
+	#if 0 //\D5\E2\B8\F6\B0姹綷C5卸\CF\D4\DD时\B2\BB要
 	if (sscanf(buf, "%u", &version) != 1) {
 		dev_err(dev, "Invalid values\n");
 		return -EINVAL;
@@ -2377,7 +2375,7 @@ static int atmel_ts_probe(struct i2c_client *client,
 		qt602240_initialize(ts);
 #endif
 
-	//后续有新的芯片加入的时候，需要区分不同的芯片
+	//\BA\F3\D0\F8\D3\D0\D0碌\C4芯片\BC\D3\C8\EB\B5\C4时\BA\F2\A3\AC\D0\E8要\C7\F8\B7植\BB同\B5\C4芯片
 	if((ts->id->family_id==0x80)&&((ts->id->variant_id==0x13)||(ts->id->variant_id==0x01))){
 		ATMEL_CHIP_TYPE=ATMEL_224;
 		
@@ -2385,8 +2383,8 @@ static int atmel_ts_probe(struct i2c_client *client,
 		if((ts->id->version!=0x11)||(ts->id->build!=0x09)){
 			printk("atmel touch screen fw auto update!\n");
 			qt602240_update_fw(1);
-			//不需要再回到前面去，要做的工作在固件升级结束后自动完成各个结构体的再填充
-			//将CRC填写正确后后面的config也不会重复写入
+			//\B2\BB\D0\E8要\D4倩氐\BD前\C3\E6去\A3\AC要\D7\F6\B5墓\A4\D7\F7\D4诠碳\FE\C9\FD\BC\B6\BD\E1\CA\F8\BA\F3\D7远\AF\CD\EA\B3筛\F7\B8\F6\BD峁筡CC\E5\B5\C4\D4\D9\CC\EE\B3\E4
+			//\BD\ABCRC\CC\EE写\D5\FD确\BA\F3\BA\F3\C3\E6\B5\C4config也\B2\BB\BB\E1\D6馗\B4写\C8\EB
 			//goto again;
 		}
 		#endif

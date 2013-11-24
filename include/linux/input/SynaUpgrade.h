@@ -3,7 +3,7 @@
 
 //#include <linux/input/synaptics_i2c_rmi.h>
 
-#if defined(CONFIG_MACH_SEAN)
+#if defined(CONFIG_MACH_ARTHUR)
 
 
 // This is Synaptics Image File Data - Auto-Generated - DO NOT EDIT!!! 
