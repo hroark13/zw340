@@ -92,7 +92,7 @@ static ssize_t cap_ts_vkeys_show(struct device *dev,	struct device_attribute *at
 
 // board arthur
 #elif defined (CONFIG_MACH_ARTHUR)
-#define SYNAPTICS_MAX_Y_POSITION	1450
+#define SYNAPTICS_MAX_Y_POSITION	1885
 static ssize_t cap_ts_vkeys_show(struct device *dev,	struct device_attribute *attr, char *buf)
 {
 	//printk("%s, %s\n",__func__,attr->attr.name);
