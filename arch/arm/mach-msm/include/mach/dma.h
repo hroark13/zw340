@@ -149,7 +149,7 @@ int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr);
 #define DMOV_SDC3_CHAN         20
 #define DMOV_SDC3_CRCI         2
 
-#define DMOV_SDC4_CHAN         21
+#define DMOV_SDC4_CHAN         8
 #define DMOV_SDC4_CRCI         5
 
 #define DMOV_SDC5_CHAN         21
