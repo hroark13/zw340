@@ -86,20 +86,6 @@ typedef enum {
 	LCD_PANEL_MAX
 } LCD_PANEL_ID;
 
-//lxt modified
-typedef enum
-{
-	LCD_PANEL_NONE = 0,
-	LCD_PANEL_LEAD_OTM8009_WVGA,
-	LCD_PANEL_TRULY_R61408e_WVGA,
-	LCD_PANEL_LEAD_HX8369_WVGA,
-	LCD_PANEL_TRULY_NT35516_QHD,
-	LCD_PANEL_LEAD_NT35516_AUO_QHD,
-	LCD_PANEL_BOE_OTM9608A_QHD
-}LCD_PANEL_TYPE;
-//end
-
-
 struct disp_info_type_suspend {
 	boolean op_enable;
 	boolean sw_refreshing_enable;
