@@ -177,6 +177,8 @@ static struct platform_device ion_dev;
 #define PMIC_GPIO_HDMI_5V_EN_V3 32  /* PMIC GPIO for V3 H/W */
 #define PMIC_GPIO_HDMI_5V_EN_V2 39 /* PMIC GPIO for V2 H/W */
 
+static int g_zte_secboot_mode;
+
 #define ADV7520_I2C_ADDR	0x39
 
 #define FPGA_SDCC_STATUS       0x8E0001A8
@@ -206,7 +208,7 @@ static struct platform_device ion_dev;
 
 #define	PM_FLIP_MPP 5 /* PMIC MPP 06 */
 
-#define DDR1_BANK_BASE 0X20000000
+#define DDR1_BANK_BASE 0X00200000
 #define DDR2_BANK_BASE 0X40000000
 
 static unsigned int phys_add = DDR2_BANK_BASE;
@@ -1724,7 +1726,7 @@ static void config_camera_off_gpios(void)
 	}
 }
 
-#if defined(CONFIG_MACH_ARTHUR) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
+#if defined(CONFIG_MACH_ARTHUR1) ||defined(CONFIG_MACH_WARP2)||defined(CONFIG_MACH_RADIANT) 
 
 #define MSM_CAMERA_POWER_BACKEND_DVDD_VAL       (1800)
 #define MSM_CAMERA_POWER_BACKEND_IOVDD_VAL      (1800)
@@ -7628,13 +7630,13 @@ static struct mmc_platform_data msm7x30_sdc1_data = {
 #endif
 
 
-
+/*
 int zte_wifi_status_register(
                         void (*callback)(int card_present, void *dev_id),
                         void *dev_id);
 
 unsigned int zte_wifi_status(struct device *dev);
-
+*/
 #ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
 static struct mmc_platform_data msm7x30_sdc2_data = {
 	.ocr_mask	= MMC_VDD_165_195 | MMC_VDD_27_28,
@@ -7665,8 +7667,9 @@ static struct mmc_platform_data msm7x30_sdc3_data = {
 	.msmsdcc_fmid	= 24576000,
 	.msmsdcc_fmax	= 49152000,
 	.nonremovable	= 0,
-	.status                 = zte_wifi_status,
+/*	.status                 = zte_wifi_status,
     .register_status_notify = zte_wifi_status_register,
+*/
 };
 #endif
 
@@ -8342,6 +8345,21 @@ extern void __init msm_init_pmic_vibrator(void);
 #ifdef CONFIG_ZTE_PLATFORM
 
 
+static void zte_get_secboot_value(void)
+{
+  smem_global *pglobal= ioremap(SMEM_LOG_GLOBAL_BASE, sizeof(smem_global));
+  g_zte_secboot_mode = pglobal->secboot_enable;
+  
+  printk(KERN_DEBUG "g_zte_secboot_mode: %d\n",g_zte_secboot_mode);
+}
+
+int zte_is_secboot_mode(void)
+{
+	return g_zte_secboot_mode;
+}
+
+EXPORT_SYMBOL(zte_is_secboot_mode);
+
 static void set_zte_board_id_type(void)
 {
        smem_global *global_tmp;
@@ -8401,6 +8419,7 @@ static void __init msm7x30_init(void)
 #ifdef CONFIG_ZTE_PLATFORM
 	zte_ftm_set_value(g_zte_ftm_flag_fixup);
        set_zte_board_id_type();
+      zte_get_secboot_value();
 
 #endif
 
@@ -8464,7 +8483,7 @@ static void __init msm7x30_init(void)
 #ifdef CONFIG_MSM_CAMERA_V4L2
 	msm7x30_init_cam();
 #endif
-	wlan_init_power(); 
+//	wlan_init_power(); 
 
 	msm_init_pmic_vibrator();
 
@@ -8587,7 +8606,7 @@ static void __init msm7x30_init(void)
 	
 #if 1
     hw_ver = read_zte_hw_ver();
-    socinfo_sync_sysfs_zte_hw_ver(hw_ver);
+//    socinfo_sync_sysfs_zte_hw_ver(hw_ver);
 #endif	
 }
 
@@ -8863,6 +8882,7 @@ static void __init msm7x30_init_early(void)
 
 #ifdef CONFIG_ZTE_PLATFORM
 #define ATAG_ZTEFTM 0x5d53cd73
+
 static int  parse_tag_zteftm(const struct tag *tags)
 {
 	int flag = 0, find = 0;
@@ -8929,16 +8949,31 @@ EXPORT_SYMBOL(get_ftm_from_tag);
 
 #endif
 
-MACHINE_START(ARTHUR, "ARTHUR")
-        .atag_offset = 0x100,
-        .map_io = msm7x30_map_io,
-        .reserve = msm7x30_reserve,
-        .init_irq = msm7x30_init_irq,
-        .init_machine = msm7x30_init,
-        .timer = &msm_timer,
-        .init_early = msm7x30_init_early,
-        .handle_irq = vic_handle_irq,
-#ifdef CONFIG_ZTE_PLATFORM
-        .fixup = zte_fixup,
-#endif
+static void __init msm7x30_fixup(struct tag *tags, char **cmdline,
+				 struct meminfo *mi)
+{
+
+	for (; tags->hdr.size; tags = tag_next(tags)) {
+		if (tags->hdr.tag == ATAG_MEM && tags->u.mem.start ==
+							DDR1_BANK_BASE) {
+				ebi1_phys_offset = DDR1_BANK_BASE;
+				phys_add = DDR1_BANK_BASE;
+				break;
+		}
+	}
+ 
+}
+
+MACHINE_START(ARTHUR, "arthur")
+	.atag_offset = 0x100,
+	.map_io = msm7x30_map_io,
+	.reserve = msm7x30_reserve,
+	.init_irq = msm7x30_init_irq,
+	.init_machine = msm7x30_init,
+	.timer = &msm_timer,
+	.init_early = msm7x30_init_early,
+	.handle_irq = vic_handle_irq,
+	.fixup = zte_fixup,
+	.fixup = msm7x30_fixup,
 MACHINE_END
+
