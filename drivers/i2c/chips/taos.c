@@ -613,10 +613,7 @@ static int taos_probe(struct i2c_client *clientp, const struct i2c_device_id *id
 	INIT_WORK(&taos_datap->taos_work, do_taos_work); 
 	mutex_init(&taos_datap->proximity_calibrating);
 	taos_datap->pdata = &taos_irq;
-	if(clientp->irq){		
-		taos_datap->pdata->irq=taos_datap->client->irq;
-		taos_datap->pdata->int_gpio=INT_TO_MSM_GPIO(taos_datap->pdata->irq);
-		}
+
 	printk(KERN_CRIT "taos use gpio %d\n",taos_datap->pdata->int_gpio);
     	ret=taos_config_int_gpio(taos_datap->pdata->int_gpio);
     	if (ret) {
