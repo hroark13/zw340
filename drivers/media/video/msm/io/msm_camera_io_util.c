@@ -263,7 +263,6 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					__func__, cam_vreg[i].reg_name);
 				goto disable_vreg;
 			}
-			msleep(1);
 		}
 	} else {
 		for (i = num_vreg-1; i >= 0; i--)
@@ -373,9 +372,10 @@ int msm_camera_config_gpio_table(struct msm_camera_sensor_info *sinfo,
 		}
 	} else {
 		for (i = gpio_conf->cam_gpio_set_tbl_size - 1; i >= 0; i--) {
-			gpio_set_value_cansleep(
-				gpio_conf->cam_gpio_set_tbl[i].gpio,
-				gpio_conf->cam_gpio_set_tbl[i].flags);
+			if (gpio_conf->cam_gpio_set_tbl[i].flags)
+				gpio_set_value_cansleep(
+					gpio_conf->cam_gpio_set_tbl[i].gpio,
+					GPIOF_OUT_INIT_LOW);
 		}
 	}
 	return rc;

@@ -48,14 +48,22 @@ enum msm_camera_i2c_data_type {
 enum msm_camera_i2c_cmd_type {
 	MSM_CAMERA_I2C_CMD_WRITE,
 	MSM_CAMERA_I2C_CMD_POLL,
+	/*ZTEBSP yuxin add for ov5640 2012.05.16 ++*/
+	#ifdef CONFIG_OV5640
+	
+	MSM_CAMERA_I2C_CMD_CHECK,	
+	MSM_CAMERA_I2C_CMD_LOAD,
+	MSM_CAMERA_I2C_CMD_READ,
+	#endif
+	/*ZTEBSP yuxin add for ov5640 2012.05.16 --*/
 };
 
 struct msm_camera_i2c_reg_conf {
 	uint16_t reg_addr;
 	uint16_t reg_data;
+	int16_t mask;
 	enum msm_camera_i2c_data_type dt;
 	enum msm_camera_i2c_cmd_type cmd_type;
-	int16_t mask;
 };
 
 struct msm_camera_i2c_conf_array {

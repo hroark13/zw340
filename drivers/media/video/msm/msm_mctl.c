@@ -161,8 +161,12 @@ static int msm_get_sensor_info(
 	info.sensor_type = sdata->sensor_type;
 	info.mount_angle = sdata->sensor_platform_info->mount_angle;
 	info.actuator_enabled = sdata->actuator_info ? 1 : 0;
-	info.strobe_flash_enabled = sdata->strobe_flash_data ? 1 : 0;
-	info.ispif_supported = mctl->ispif_sdev ? 1 : 0;
+    //zte-modify jixd 20121212 add for back camera not support auto focus begin
+    info.autofocus_disable = sdata->autofocus_info;
+    pr_err("%s sdata->autofocus_info:%d ", __func__,sdata->autofocus_info);    
+    //zte-modify jixd 20121212 add for back camera not support auto focus end
+    info.strobe_flash_enabled = sdata->strobe_flash_data ? 1 : 0;
+    info.ispif_supported = mctl->ispif_sdev ? 1 : 0;
 
 	/* copy back to user space */
 	if (copy_to_user((void *)arg,
@@ -208,6 +212,37 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 	case MSM_CAM_IOCTL_GET_SENSOR_INFO:
 			rc = msm_get_sensor_info(p_mctl, argp);
 			break;
+
+    // zte-modify, 20120831 fuyipeng modify for AF Rect for touch focus +++
+    case MSM_CAM_IOCTL_SET_SENSOR_AF_RECT:
+    {
+        struct msm_sensor_af_rect_data afrect;
+        struct msm_sensor_ctrl_t *s_ctrl = get_sctrl(p_mctl->sensor_sdev);
+        
+        if (copy_from_user(&afrect,
+            (void *)argp,
+            sizeof(struct msm_sensor_af_rect_data))) {
+            ERR_COPY_FROM_USER();
+            return -EFAULT;
+        }
+        s_ctrl->func_tbl->sensor_set_af_rect(s_ctrl, &afrect);
+        break;
+    }
+    // zte-modify, 20120831 fuyipeng modify for AF Rect for touch focus ---
+
+    // zte-modify, 20120831 fuyipeng modify for flash +++
+    case MSM_CAM_IOCTL_GET_FLASH_AUTO_STATE:
+    {
+        uint8_t AutoFlash = 0; 
+        struct msm_sensor_ctrl_t *s_ctrl = get_sctrl(p_mctl->sensor_sdev);
+        pr_err("%s: Get Flash Auto State \n", __func__);
+
+        s_ctrl->func_tbl->sensor_flash_auto_state(s_ctrl, &AutoFlash);
+
+        *(uint8_t *)arg = AutoFlash;
+        break;
+    }
+    // zte-modify, 20120831 fuyipeng modify for flash ---
 
 	case MSM_CAM_IOCTL_SENSOR_IO_CFG:
 		rc = v4l2_subdev_call(p_mctl->sensor_sdev,
@@ -362,11 +397,19 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 			ERR_COPY_FROM_USER();
 			rc = -EFAULT;
 		} else {
-		    if( p_mctl && p_mctl->sensor_sdev)
 			rc = msm_flash_ctrl(p_mctl->sdata, &flash_info);
 		}
 		break;
 	}
+/*[ECID:000000] ZTEBSP wangbing, for camera soc flash, 20120702 */	
+#ifdef CONFIG_ZTE_CAMERA_SOC_FLASH	
+	case MSM_CAM_IOCTL_FLASH_MODE_SET: {
+		
+		led_mode_t  flash_mode= (led_mode_t)arg;
+		msm_flash_mode_set(flash_mode);
+		break;
+	}
+#endif	
 	case MSM_CAM_IOCTL_PICT_PP:
 		rc = msm_mctl_set_pp_key(p_mctl, (void __user *)arg);
 		break;
@@ -407,36 +450,6 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 		rc = v4l2_subdev_call(p_mctl->ispif_sdev,
 			core, ioctl, VIDIOC_MSM_ISPIF_CFG, argp);
 		break;
-
-	case MSM_CAM_IOCTL_FLASH_LED_ON_OFF_CFG: {
-	        uint32_t flashled_switch;
-
-	        if (copy_from_user(&flashled_switch, argp, sizeof(flashled_switch))) {
-	            ERR_COPY_FROM_USER();
-	            rc = -EFAULT;
-	        } else {
-	        	pr_err("msm_ioctl_config:MSM_CAM_IOCTL_FLASH_LED_ON_OFF_CFG,flashled_switch=%d\n",flashled_switch);
-
-	            if (0 == flashled_switch) {
-	                rc = msm_camera_flash_led_disable();
-	            }
-	            else {
-	                rc = msm_camera_flash_led_enable();
-	            }
-	        }
-	        break;	
-	    }
-
-	
-	case MSM_CAM_IOCTL_FLASH_LED_MODE_CFG: {
-			uint32_t led_mode;
-			if (copy_from_user(&led_mode, argp, sizeof(led_mode))) {
-				ERR_COPY_FROM_USER();
-				rc = -EFAULT;
-			} else
-				rc = msm_camera_flash_set_led_mode(p_mctl->sdata->flash_data, led_mode);
-			break;
-		}
 	default:
 		/* ISP config*/
 		D("%s:%d: go to default. Calling msm_isp_config\n",

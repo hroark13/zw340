@@ -217,7 +217,7 @@ static int msm_csic_config(struct csic_cfg_params *cfg_params)
 
 	return rc;
 }
-
+#if DBG_CSIC //ztebsp zhangzhao qualcomm patch	
 static irqreturn_t msm_csic_irq(int irq_num, void *data)
 {
 	uint32_t irq;
@@ -235,7 +235,7 @@ static irqreturn_t msm_csic_irq(int irq_num, void *data)
 		pr_info("Unsupported packet format is received\n");
 	return IRQ_HANDLED;
 }
-
+#endif
 static int msm_csic_subdev_g_chip_ident(struct v4l2_subdev *sd,
 			struct v4l2_dbg_chip_ident *chip)
 {
@@ -257,13 +257,6 @@ static struct msm_cam_clk_info csic_7x_clk_info[] = {
 	{"csi_vfe_clk", -1},
 	{"csi_pclk", -1},
 };
-
-static struct msm_cam_clk_info csic_7x30_clk_info[] = {
-	{"csi_clk", 153600000},
-	{"csi_vfe_clk", -1},
-	{"csi_pclk", -1},
-};
-
 
 static int msm_csic_init(struct v4l2_subdev *sd, uint32_t *csic_version)
 {
@@ -288,13 +281,7 @@ static int msm_csic_init(struct v4l2_subdev *sd, uint32_t *csic_version)
 	if (rc < 0) {
 		csic_dev->hw_version = CSIC_7X;
 		rc = msm_cam_clk_enable(&csic_dev->pdev->dev, csic_7x_clk_info,
-		csic_dev->csic_clk, ARRAY_SIZE(csic_7x_clk_info), 1);
-	}
-	if (rc < 0) {
-		csic_dev->hw_version = CSIC_7X30;
-		rc = msm_cam_clk_enable(&csic_dev->pdev->dev,
-		csic_7x30_clk_info,
-		csic_dev->csic_clk, ARRAY_SIZE(csic_7x30_clk_info), 1);
+			csic_dev->csic_clk, ARRAY_SIZE(csic_7x_clk_info), 1);
 		if (rc < 0) {
 			csic_dev->hw_version = 0;
 			iounmap(csic_dev->base);
@@ -304,9 +291,11 @@ static int msm_csic_init(struct v4l2_subdev *sd, uint32_t *csic_version)
 	}
 	if (csic_dev->hw_version == CSIC_7X)
 		msm_camio_vfe_blk_reset_3();
+
 #if DBG_CSIC
 	enable_irq(csic_dev->irq->start);
 #endif
+
 	return 0;
 }
 
@@ -342,7 +331,6 @@ static void msm_csic_disable(struct v4l2_subdev *sd)
 	}
 }
 
-
 static int msm_csic_release(struct v4l2_subdev *sd)
 {
 	struct csic_device *csic_dev;
@@ -359,10 +347,8 @@ static int msm_csic_release(struct v4l2_subdev *sd)
 	} else if (csic_dev->hw_version == CSIC_7X) {
 		msm_cam_clk_enable(&csic_dev->pdev->dev, csic_7x_clk_info,
 			csic_dev->csic_clk, ARRAY_SIZE(csic_7x_clk_info), 0);
-	} else if (csic_dev->hw_version == CSIC_7X30) {
-		msm_cam_clk_enable(&csic_dev->pdev->dev, csic_7x30_clk_info,
-			csic_dev->csic_clk, ARRAY_SIZE(csic_7x30_clk_info), 0);
 	}
+
 	iounmap(csic_dev->base);
 	csic_dev->base = NULL;
 	return 0;
@@ -424,6 +410,7 @@ static int __devinit csic_probe(struct platform_device *pdev)
 		rc = -ENODEV;
 		goto csic_no_resource;
 	}
+#if DBG_CSIC //ztebsp zhangzhao qualcomm patch
 	new_csic_dev->irq = platform_get_resource_byname(pdev,
 					IORESOURCE_IRQ, "csic");
 	if (!new_csic_dev->irq) {
@@ -431,6 +418,7 @@ static int __devinit csic_probe(struct platform_device *pdev)
 		rc = -ENODEV;
 		goto csic_no_resource;
 	}
+#endif//ztebsp zhangzhao qualcomm patch	
 	new_csic_dev->io = request_mem_region(new_csic_dev->mem->start,
 		resource_size(new_csic_dev->mem), pdev->name);
 	if (!new_csic_dev->io) {
@@ -438,7 +426,7 @@ static int __devinit csic_probe(struct platform_device *pdev)
 		rc = -EBUSY;
 		goto csic_no_resource;
 	}
-
+#if DBG_CSIC //ztebsp zhangzhao qualcomm patch	
 	rc = request_irq(new_csic_dev->irq->start, msm_csic_irq,
 		IRQF_TRIGGER_HIGH, "csic", new_csic_dev);
 	if (rc < 0) {
@@ -449,7 +437,7 @@ static int __devinit csic_probe(struct platform_device *pdev)
 		goto csic_no_resource;
 	}
 	disable_irq(new_csic_dev->irq->start);
-
+#endif//ztebsp zhangzhao qualcomm patch	
 	new_csic_dev->pdev = pdev;
 
 	rc = msm_cam_clk_enable(&new_csic_dev->pdev->dev, &csic_7x_clk_info[2],

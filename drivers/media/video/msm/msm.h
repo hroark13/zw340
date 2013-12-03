@@ -587,9 +587,6 @@ int msm_server_close_client(int idx);
 int msm_cam_server_open_mctl_session(struct msm_cam_v4l2_device *pcam,
 	int *p_active);
 int msm_cam_server_close_mctl_session(struct msm_cam_v4l2_device *pcam);
-
-//add by jiangwanquan 20130417 to get sensor num  
-int msm_cam_get_camera_num( uint8_t *cam_front, uint8_t *cam_main);
 #endif /* __KERNEL__ */
 
 #endif /* _MSM_H */

@@ -15,7 +15,18 @@
 #include "msm_ispif.h"
 #include "msm_camera_i2c_mux.h"
 
+
+/*ZTEBSP yuxin add for ov5640 AF FW download 2012.05.22 ++*/
+#ifdef CONFIG_OV5640
+static int download_flag = 0;   
+//int af_enable  = 0;            
+//int ov5640_af_running = 0;    
+//extern int ov5640_set_af_result(struct msm_sensor_ctrl_t *s_ctrl, uint16_t cmd);	/*ECID:0000 2012-6-18 zhangzhao optimize the camera focus start*/
+
+#endif
+/*ZTEBSP yuxin add for ov5640 AF FW download 2012.05.22 --*/
 /*=============================================================*/
+
 int32_t msm_sensor_adjust_frame_lines(struct msm_sensor_ctrl_t *s_ctrl,
 	uint16_t res)
 {
@@ -50,6 +61,22 @@ int32_t msm_sensor_adjust_frame_lines(struct msm_sensor_ctrl_t *s_ctrl,
 	return 0;
 }
 
+/*ZTEBSP yuxin add for ov5640 AF FW download 2012.05.21 ++*/
+#ifdef CONFIG_OV5640
+int32_t msm_sensor_write_firmware_downloads(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int32_t rc;
+	
+	rc = msm_sensor_write_all_conf_array(
+		s_ctrl->sensor_i2c_client,
+		s_ctrl->msm_sensor_reg->fw_download,
+		s_ctrl->msm_sensor_reg->fw_size);
+      
+	return rc;
+}
+#endif
+/*ZTEBSP yuxin add for ov5640 AF FW download 2012.05.21 --*/
+
 int32_t msm_sensor_write_init_settings(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc;
@@ -70,9 +97,9 @@ int32_t msm_sensor_write_res_settings(struct msm_sensor_ctrl_t *s_ctrl,
 	if (rc < 0)
 		return rc;
 
-	rc = msm_sensor_write_output_settings(s_ctrl, res);
-	if (rc < 0)
-		return rc;
+//	rc = msm_sensor_write_output_settings(s_ctrl, res);
+//	if (rc < 0)
+//		return rc;
 
 	if (s_ctrl->func_tbl->sensor_adjust_frame_lines)
 		rc = s_ctrl->func_tbl->sensor_adjust_frame_lines(s_ctrl, res);
@@ -83,6 +110,7 @@ int32_t msm_sensor_write_res_settings(struct msm_sensor_ctrl_t *s_ctrl,
 int32_t msm_sensor_write_output_settings(struct msm_sensor_ctrl_t *s_ctrl,
 	uint16_t res)
 {
+#if 0  // ZTE_MODIFY changed by jidewei 2012-02-11
 	int32_t rc = -EFAULT;
 	struct msm_camera_i2c_reg_conf dim_settings[] = {
 		{s_ctrl->sensor_output_reg_addr->x_output,
@@ -102,6 +130,10 @@ int32_t msm_sensor_write_output_settings(struct msm_sensor_ctrl_t *s_ctrl,
 	rc = msm_camera_i2c_write_tbl(s_ctrl->sensor_i2c_client, dim_settings,
 		ARRAY_SIZE(dim_settings), MSM_CAMERA_I2C_WORD_DATA);
 	return rc;
+#else
+	int32_t rc = 0;
+	return rc;
+#endif
 }
 
 void msm_sensor_start_stream(struct msm_sensor_ctrl_t *s_ctrl)
@@ -143,14 +175,18 @@ void msm_sensor_group_hold_off(struct msm_sensor_ctrl_t *s_ctrl)
 int32_t msm_sensor_set_fps(struct msm_sensor_ctrl_t *s_ctrl,
 						struct fps_cfg *fps)
 {
+#if 0  // ZTE_MODIFY changed by jidewei 2012-02-11
 	s_ctrl->fps_divider = fps->fps_div;
 
+#else
 	return 0;
+#endif
 }
 
 int32_t msm_sensor_write_exp_gain1(struct msm_sensor_ctrl_t *s_ctrl,
 		uint16_t gain, uint32_t line)
 {
+#if 0  // ZTE_MODIFY changed by jidewei 2012-02-11
 	uint32_t fl_lines;
 	uint8_t offset;
 	fl_lines = s_ctrl->curr_frame_length_lines;
@@ -170,12 +206,14 @@ int32_t msm_sensor_write_exp_gain1(struct msm_sensor_ctrl_t *s_ctrl,
 		s_ctrl->sensor_exp_gain_info->global_gain_addr, gain,
 		MSM_CAMERA_I2C_WORD_DATA);
 	s_ctrl->func_tbl->sensor_group_hold_off(s_ctrl);
+#endif	
 	return 0;
 }
 
 int32_t msm_sensor_write_exp_gain2(struct msm_sensor_ctrl_t *s_ctrl,
 		uint16_t gain, uint32_t line)
 {
+#if 0  // ZTE_MODIFY changed by jidewei 2012-02-11
 	uint32_t fl_lines, ll_pclk, ll_ratio;
 	uint8_t offset;
 	fl_lines = s_ctrl->curr_frame_length_lines * s_ctrl->fps_divider / Q10;
@@ -198,6 +236,7 @@ int32_t msm_sensor_write_exp_gain2(struct msm_sensor_ctrl_t *s_ctrl,
 		s_ctrl->sensor_exp_gain_info->global_gain_addr, gain,
 		MSM_CAMERA_I2C_WORD_DATA);
 	s_ctrl->func_tbl->sensor_group_hold_off(s_ctrl);
+	#endif
 	return 0;
 }
 
@@ -210,24 +249,44 @@ int32_t msm_sensor_setting1(struct msm_sensor_ctrl_t *s_ctrl,
 	s_ctrl->func_tbl->sensor_stop_stream(s_ctrl);
 	msleep(30);
 	if (update_type == MSM_SENSOR_REG_INIT) {
-		CDBG("Register INIT\n");
+		printk("Register INIT\n");
 		s_ctrl->curr_csi_params = NULL;
 		msm_sensor_enable_debugfs(s_ctrl);
 		msm_sensor_write_init_settings(s_ctrl);
+		
+		/*ZTEBSP yuxin add for ov5640 download AF FW when sensor init,2012.05.23 ++*/
+		if (NULL != s_ctrl->func_tbl->sensor_download_af_firmware)
+			{
+	 
+ 	               pr_err("+++++download af firmware+++++++++++ %s \n",__func__);
+
+		      rc=s_ctrl->func_tbl->sensor_download_af_firmware(s_ctrl);//ZTEBSP yuxin add for ov5640 AF FW download
+        		if(!rc)
+        		{
+        		  printk("%s:ov5640 AF FW download success\n",__func__);
+			#ifdef CONFIG_OV5640	
+        		  download_flag=1;   //download success is 1
+        		 #endif
+        		}
+		}
+		/*ZTEBSP yuxin add for ov5640 download AF FW when sensor init,2012.05.23 --*/
+
 		csi_config = 0;
 	} else if (update_type == MSM_SENSOR_UPDATE_PERIODIC) {
-		CDBG("PERIODIC : %d\n", res);
+		printk("PERIODIC : %d\n", res);
+		 printk("%s:sensor_name = %s, res = %d\n",__func__, s_ctrl->sensordata->sensor_name, res);
+
 		msm_sensor_write_conf_array(
 			s_ctrl->sensor_i2c_client,
 			s_ctrl->msm_sensor_reg->mode_settings, res);
 		msleep(30);
 		if (!csi_config) {
 			s_ctrl->curr_csic_params = s_ctrl->csic_params[res];
-			CDBG("CSI config in progress\n");
+			printk("CSI config in progress\n");
 			v4l2_subdev_notify(&s_ctrl->sensor_v4l2_subdev,
 				NOTIFY_CSIC_CFG,
 				s_ctrl->curr_csic_params);
-			CDBG("CSI config is done\n");
+			printk("CSI config is done\n");
 			mb();
 			msleep(30);
 			csi_config = 1;
@@ -238,6 +297,22 @@ int32_t msm_sensor_setting1(struct msm_sensor_ctrl_t *s_ctrl,
 
 		s_ctrl->func_tbl->sensor_start_stream(s_ctrl);
 		msleep(50);
+		
+		/*ZTEBSP yuxin add for ov5640 AF FW cancel 2012.05.23 ++*/
+		#ifdef CONFIG_OV5640		
+                 // cancel af when snapshot switch to preview     
+               if ((1 == res)&&(1 == download_flag))
+               {
+               	/*if  (!strcmp(s_ctrl->sensordata->sensor_name, "ov5640"))
+           		  {	
+           		  	rc = ov5640_set_af_result(s_ctrl, 0x08);
+           		  }*/
+			if(NULL !=s_ctrl->func_tbl->sensor_set_af_result )	  	
+			 rc=s_ctrl->func_tbl->sensor_set_af_result(s_ctrl);
+				
+               }  
+		#endif
+		/*ZTEBSP yuxin add for ov5640 AF FW cancel 2012.05.23 --*/
 	}
 	return rc;
 }
@@ -286,7 +361,6 @@ int32_t msm_sensor_set_sensor_mode(struct msm_sensor_ctrl_t *s_ctrl,
 	int mode, int res)
 {
 	int32_t rc = 0;
-	s_ctrl->curr_mode = mode;
 	if (s_ctrl->curr_res != res) {
 		s_ctrl->curr_frame_length_lines =
 			s_ctrl->msm_sensor_reg->
@@ -411,7 +485,7 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 	mutex_lock(s_ctrl->msm_sensor_mutex);
-	CDBG("msm_sensor_config: cfgtype = %d\n",
+	printk("msm_sensor_config: cfgtype = %d\n",
 	cdata.cfgtype);
 		switch (cdata.cfgtype) {
 		case CFG_SET_FPS:
@@ -472,52 +546,7 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 
 		case CFG_SET_EFFECT:
 			break;
-		case CFG_SET_AF:
-			if (s_ctrl->func_tbl->
-			af_trigger == NULL) {
-				rc = -EFAULT;
-				break;
-			}
-			rc = s_ctrl->func_tbl->af_trigger(s_ctrl);
-			break;
-		case CFG_GET_AF:
-		{
-		   if (s_ctrl->func_tbl->
-			af_get == NULL) {
-				rc = -EFAULT;
-				break;
-			}
-			rc = s_ctrl->func_tbl->af_get(s_ctrl,&cdata.cfg.af_status);
-			 if (copy_to_user((void *)argp,
-				&cdata,
-				sizeof(struct sensor_cfg_data)))
-				rc = -EFAULT;
-		}
-			break;
-		case CFG_STOP_AF:
-		{
-		   if (s_ctrl->func_tbl->
-			af_stop == NULL) {
-				rc = -EFAULT;
-				break;
-			}
-			rc = s_ctrl->func_tbl->af_stop(s_ctrl);
-		}
-			break;
-		case CFG_GET_FLASH_MODE:
-		{
-		   if (s_ctrl->func_tbl->
-			get_flashmode == NULL) {
-				rc = -EFAULT;
-				break;
-			}
-			rc = s_ctrl->func_tbl->get_flashmode(s_ctrl,&cdata.cfg.is_autoflash);
-			if (copy_to_user((void *)argp,
-				&cdata,
-				sizeof(struct sensor_cfg_data)))
-				rc = -EFAULT;
-		}
-		    break;
+
 		case CFG_SENSOR_INIT:
 			if (s_ctrl->func_tbl->
 			sensor_mode_init == NULL) {
@@ -617,7 +646,7 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc = 0;
 	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
-	CDBG("%s: %d\n", __func__, __LINE__);
+	printk("%s: %d\n", __func__, __LINE__);
 	s_ctrl->reg_ptr = kzalloc(sizeof(struct regulator *)
 			* data->sensor_platform_info->num_vreg, GFP_KERNEL);
 	if (!s_ctrl->reg_ptr) {
@@ -699,7 +728,7 @@ request_gpio_failed:
 int32_t msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
-	CDBG("%s\n", __func__);
+	printk("%s\n", __func__);
 	if (data->sensor_platform_info->i2c_conf &&
 		data->sensor_platform_info->i2c_conf->use_i2c_mux)
 		msm_sensor_disable_i2c_mux(
@@ -727,21 +756,42 @@ int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc = 0;
 	uint16_t chipid = 0;
+//ZTEBSP ZHANGZHAO
+       if(s_ctrl->sensor_id_info->sensor_id_reg_addr_ext)
+       	{
+	rc = msm_camera_i2c_write_tbl(s_ctrl->sensor_i2c_client,
+		s_ctrl->sensor_id_info->sensor_id_reg_addr_ext->conf,
+		s_ctrl->sensor_id_info->sensor_id_reg_addr_ext->size,
+		s_ctrl->sensor_id_info->sensor_id_reg_addr_ext->data_type);
+	if (rc < 0) {
+		CDBG("%s: read id first failed\n", __func__);
+		return rc;
+	       }
+	}
+	   
+#if 0 /*ZTEBSP yuxin modify for read sensor ID */
 	rc = msm_camera_i2c_read(
 			s_ctrl->sensor_i2c_client,
 			s_ctrl->sensor_id_info->sensor_id_reg_addr, &chipid,
 			MSM_CAMERA_I2C_WORD_DATA);
+#else
+	rc = msm_camera_i2c_read(
+			s_ctrl->sensor_i2c_client,
+			s_ctrl->sensor_id_info->sensor_id_reg_addr, &chipid,
+			s_ctrl->msm_sensor_reg->default_data_type);
+#endif
 	if (rc < 0) {
 		pr_err("%s: %s: read id failed\n", __func__,
 			s_ctrl->sensordata->sensor_name);
 		return rc;
 	}
 
-	pr_err("jiangwanquan msm_sensor id: %d\n", chipid);
+	printk("msm_sensor id: 0x%x  0x%x\n", chipid, s_ctrl->sensor_id_info->sensor_id);
 	if (chipid != s_ctrl->sensor_id_info->sensor_id) {
 		pr_err("msm_sensor_match_id chip id doesnot match\n");
 		return -ENODEV;
 	}
+
 	return rc;
 }
 
@@ -755,7 +805,7 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 {
 	int rc = 0;
 	struct msm_sensor_ctrl_t *s_ctrl;
-	CDBG("%s %s_i2c_probe called\n", __func__, client->name);
+	printk("%s %s_i2c_probe called\n", __func__, client->name);
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("%s %s i2c_check_functionality failed\n",
 			__func__, client->name);
@@ -860,18 +910,25 @@ int32_t msm_sensor_v4l2_s_ctrl(struct v4l2_subdev *sd,
 	struct v4l2_control *ctrl)
 {
 	int rc = -1, i = 0;
+	/*ZTEBSP yuxin modify for get setting info 2012.05.25 ++*/
+	#if 0
+	struct msm_sensor_ctrl_t *s_ctrl =
+		(struct msm_sensor_ctrl_t *) sd->dev_priv;
+	#else
 	struct msm_sensor_ctrl_t *s_ctrl = get_sctrl(sd);
+	#endif
+	/*ZTEBSP yuxin modify for get setting info 2012.05.25 --*/
 	struct msm_sensor_v4l2_ctrl_info_t *v4l2_ctrl =
 		s_ctrl->msm_sensor_v4l2_ctrl_info;
 
-	CDBG("%s\n", __func__);
-	CDBG("%d\n", ctrl->id);
+	//printk("%s\n", __func__);
+	CDBG("%s: %d\n",__func__, ctrl->id);
 	if (v4l2_ctrl == NULL)
 		return rc;
+
 	for (i = 0; i < s_ctrl->num_v4l2_ctrl; i++) {
 		if (v4l2_ctrl[i].ctrl_id == ctrl->id) {
 			if (v4l2_ctrl[i].s_v4l2_ctrl != NULL) {
-				CDBG("\n calling msm_sensor_s_ctrl_by_enum\n");
 				rc = v4l2_ctrl[i].s_v4l2_ctrl(
 					s_ctrl,
 					&s_ctrl->msm_sensor_v4l2_ctrl_info[i],
@@ -891,8 +948,8 @@ int32_t msm_sensor_v4l2_query_ctrl(
 	struct msm_sensor_ctrl_t *s_ctrl =
 		(struct msm_sensor_ctrl_t *) sd->dev_priv;
 
-	CDBG("%s\n", __func__);
-	CDBG("%s id: %d\n", __func__, qctrl->id);
+	//printk("%s\n", __func__);
+	printk("%s id: %d\n", __func__, qctrl->id);
 
 	if (s_ctrl->msm_sensor_v4l2_ctrl_info == NULL)
 		return rc;
@@ -916,7 +973,8 @@ int msm_sensor_s_ctrl_by_enum(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
 {
 	int rc = 0;
-	CDBG("%s enter\n", __func__);
+	//printk("%s enter\n", __func__);
+	CDBG("%s:setting enum is %x,value =%d\n",__func__,ctrl_info->ctrl_id,value);
 	rc = msm_sensor_write_enum_conf_array(
 		s_ctrl->sensor_i2c_client,
 		ctrl_info->enum_cfg_settings, value);
@@ -938,7 +996,7 @@ DEFINE_SIMPLE_ATTRIBUTE(sensor_debugfs_stream, NULL,
 
 static int msm_sensor_debugfs_test_s(void *data, u64 val)
 {
-	CDBG("val: %llu\n", val);
+	printk("val: %llu\n", val);
 	return 0;
 }
 

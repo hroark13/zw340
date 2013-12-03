@@ -640,7 +640,7 @@ static int msm_server_proc_ctrl_cmd(struct msm_cam_v4l2_device *pcam,
 	ctrlcmd.length = cmd_len + value_len;
 	ctrlcmd.value = (void *)ctrl_data;
 	if (tmp_cmd->timeout_ms > 0)
-		ctrlcmd.timeout_ms = tmp_cmd->timeout_ms;
+		ctrlcmd.timeout_ms = tmp_cmd->timeout_ms + 500;//ECID:0000 zhangzhao 2012-6-28 avoid toshiba focus failed
 	else
 		ctrlcmd.timeout_ms = 1000;
 	ctrlcmd.vnode_id = pcam->vnode_id;
@@ -3370,24 +3370,6 @@ device_fail:
 probe_fail:
 	pr_err("%s probe_fail\n", __func__);
 	return NULL;
-}
-
-int msm_cam_get_camera_num( uint8_t *cam_front, uint8_t *cam_main)
-{
-    int i;
-
-	*cam_front = 0;
-	*cam_main  = 0;
-	
-	for( i=0; i<g_server_dev.camera_info.num_cameras; i++)
-	{
-	  
-	  if( g_server_dev.camera_info.is_internal_cam[i] == 1)
-	  	*cam_front = *cam_front + 1;
-	  else if( g_server_dev.camera_info.is_internal_cam[i] == 0)
-	  	*cam_main  = *cam_main  + 1;
-	}
-   return 0;
 }
 
 /* register a msm sensor into the msm device, which will probe the

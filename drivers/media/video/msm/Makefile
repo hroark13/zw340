@@ -29,7 +29,6 @@ obj-$(CONFIG_ARCH_QSD8X50) += msm_vfe8x.o msm_vfe8x_proc.o
 ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
   obj-$(CONFIG_ARCH_MSM8X60) += msm_vfe31_v4l2.o msm_vpe.o
   obj-$(CONFIG_ARCH_MSM7X30) += msm_vfe31_v4l2.o msm_vpe.o msm_axi_qos.o
-  obj-$(CONFIG_SENSOR_INFO)  += msm_sensorinfo.o
 else
   obj-$(CONFIG_ARCH_MSM8X60) += msm_vfe31.o msm_vpe1.o
   obj-$(CONFIG_ARCH_MSM7X30) += msm_vfe31.o msm_vpe1.o
@@ -56,6 +55,7 @@ endif
 obj-$(CONFIG_QS_S5K4E1) += qs_s5k4e1.o qs_s5k4e1_reg.o
 obj-$(CONFIG_VB6801) += vb6801.o
 obj-$(CONFIG_IMX072) += imx072.o imx072_reg.o
+#obj-$(CONFIG_OV5640) += ov5640.o #ZTEBSP zhangzhao add for OV5640,2012.04.23 --
 obj-$(CONFIG_MT9D112) += mt9d112.o mt9d112_reg.o
 
 obj-$(CONFIG_MT9D113) += mt9d113.o mt9d113_reg.o

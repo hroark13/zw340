@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,322 +13,3643 @@
 
 #include "msm_sensor.h"
 #include "msm.h"
-#include "ov5640_reg.h"
-
+#include "ov5640af.h" //ECID:0000 zhangzhao optimize the camera start up time
+//#include "ov5640_v4l2.h"
 #define SENSOR_NAME "ov5640"
+#define PLATFORM_DRIVER_NAME "msm_camera_ov5640"
+#define ov5640_obj ov5640_##obj
 
-static int is_init=0;
 
-int32_t ov5640_TouchAF_x = 40;//40;//-1;
-int32_t ov5640_TouchAF_y = 30;//30;//-1;
+#define CAMERA_FOR_OBJECTIVE   
 
-uint16_t YAVG; //kenxu add for improve noise.
-uint16_t WB_T; //neil add for detect wb temperature
-int preview_sysclk, preview_HTS;
-
-static unsigned int ov5640_preview_exposure;
-static uint16_t ov5640_gain;
-static unsigned short ov5640_preview_maxlines;
-static int  zte_effect=0xff;
-static int  zte_sat=0xff;
-static int  zte_contrast=0xff;
-static int  zte_sharpness=0xff;
-static int  zte_afmode = 0xff;
-static int8_t  zte_af_force_write=0;
-static int  zte_iso=0xff;
-static int  zte_exposure= 0xff;
-static int  zte_awb= 0xff;
-static int  zte_antibanding= 0xff;
-//static int8_t  zte_brightness=3;
-
-static uint16_t reg_0x3400;
-static uint16_t reg_0x3401;
-static uint16_t reg_0x3402;
-static uint16_t reg_0x3403;
-static uint16_t reg_0x3404;
-static uint16_t reg_0x3405;
-
-extern void zte_flash_auto_flag_set_value(int);
-
-static int32_t ov5640_i2c_write_table(struct msm_sensor_ctrl_t *s_ctrl, struct ov5640_i2c_reg_conf const *reg_conf_tbl,int len)
-{
-	uint32_t i;
-	int32_t rc = 0;
-	
-	for (i = 0; i < len; i++)
-	{
-		rc=msm_camera_i2c_write(s_ctrl->sensor_i2c_client, reg_conf_tbl[i].waddr, reg_conf_tbl[i].wdata, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-		    break;
-		}
-
-		if (reg_conf_tbl[i].mdelay_time != 0)
-		{
-		    msleep(reg_conf_tbl[i].mdelay_time);
-		}
-     }
-    return 0;
-}
 
 DEFINE_MUTEX(ov5640_mut);
+
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+uint16_t g_preview_u;
+uint16_t g_preview_v;
+uint16_t g_preview_exposure;
+uint16_t g_preview_line_width;
+uint16_t g_preview_gain_low;
+uint16_t g_preview_gain_high;
+uint16_t g_preview_gain;
+uint16_t g_preview_frame_rate;
+uint16_t g_preview_uv;
+uint16_t YAVG; //kenxu add for improve noise.
+int ov5640_effect_mode=MSM_V4L2_EFFECT_OFF;
+static  int download_flag = 0;
+
+// zte-modify, 20120718 fuyipeng modify to optimize the autofocus +++
+static int af_count = 0;
+// zte-modify, 20120718 fuyipeng modify to optimize the autofocus ---
+
+#define  CAPTURE_FRAMERATE 750
+#define  PREVIEW_FRAMERATE 2500    
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm end
 static struct msm_sensor_ctrl_t ov5640_s_ctrl;
 
 static struct msm_camera_i2c_reg_conf ov5640_start_settings[] = {
-	{0x3017, 0xff},
-	{0x3018, 0xff},
+          {0x4202, 0x00}
 };
 
 static struct msm_camera_i2c_reg_conf ov5640_stop_settings[] = {
-	{0x3017, 0x00},
-	{0x3018, 0x00},
+          {0x4202, 0x0f}
 };
 
-static struct msm_camera_i2c_reg_conf ov5640_reset_settings[] = {
+static struct msm_camera_i2c_reg_conf ov5640_groupon_settings[] = {
+//      {0x3008, 0x02},
 };
 
-static struct msm_camera_i2c_reg_conf ov5640_prev_settings[] = {
+static struct msm_camera_i2c_reg_conf ov5640_groupoff_settings[] = {
+//	{0x3008, 0x42},
+};
+
+
+
+
+static struct msm_camera_i2c_reg_conf ov5640_recommend_settings[] ={
+
+/* 1280*960 25fps*/
+//{0x3103, 0x11},
+//{0x3008, 0x82},
+{0x3008, 0x42},  
+{0x3103, 0x03},
+{0x3017, 0x00},
+{0x3018, 0x00},
+{0x3034, 0x18},
+{0x3035, 0x21},
+{0x3036, 0x5d},
+{0x3037, 0x13},
+{0x3108, 0x01},
+{0x3630, 0x36},
+{0x3631, 0x0e},
+{0x3632, 0xe2},
+{0x3633, 0x12},
+{0x3634, 0x40},
+{0x3621, 0xe0},
+{0x3704, 0xa0},
+{0x3703, 0x5a},
+{0x3715, 0x78},
+{0x3717, 0x01},
+{0x370b, 0x60},
+{0x3705, 0x1a},
+{0x3905, 0x02},
+{0x3906, 0x10},
+{0x3901, 0x0a},
+{0x3731, 0x12},
+{0x3600, 0x08},
+{0x3601, 0x33},
+{0x302d, 0x60},
+{0x3620, 0x52},
+{0x371b, 0x20},
+{0x471c, 0x50},
+{0x3a13, 0x43},
+{0x3a18, 0x00},
+{0x3a19, 0xf8},
+{0x3635, 0x13},
+{0x3636, 0x03},
+{0x3622, 0x01},
+{0x3c01, 0x34},
+{0x3c04, 0x28},
+{0x3c05, 0x98},
+{0x3c06, 0x00},
+{0x3c07, 0x07},
+{0x3c08, 0x00},
+{0x3c09, 0x1c},
+{0x3c0a, 0x9c},
+{0x3c0b, 0x40},
+#if defined ( CONFIG_PROJECT_P825A10 ) || defined ( CONFIG_PROJECT_P825F01 ) || defined ( CONFIG_PROJECT_P865F01 ) || defined ( CONFIG_PROJECT_P865V30 ) ||defined ( CONFIG_PROJECT_P865V20)
+{0x3820, 0x40},//0x46 yuxin modify for flip 2012.05.28
+{0x3821, 0x06},//0x00
+#else
+{0x3820, 0x46},
+{0x3821, 0x00},
+#endif
+{0x3814, 0x31},
+{0x3815, 0x31},
+{0x3800, 0x00},
+{0x3801, 0x00},
+{0x3802, 0x00},
+{0x3803, 0x04},
+{0x3804, 0x0a},
+{0x3805, 0x3f},
+{0x3806, 0x07},
+{0x3807, 0x9b},
+{0x3808, 0x05},
+{0x3809, 0x00},
+{0x380a, 0x03},
+{0x380b, 0xc0},
+{0x380c, 0x07},
+{0x380d, 0x68},
+{0x380e, 0x03},
+{0x380f, 0xd8},
+{0x3810, 0x00},
+{0x3811, 0x10},
+{0x3812, 0x00},
+{0x3813, 0x06},
+{0x3618, 0x00},
+{0x3612, 0x29},
+{0x3708, 0x64},
+{0x3709, 0x52},
+{0x370c, 0x03},
+{0x3a02, 0x03},
+{0x3a03, 0xd8},
+{0x3a08, 0x01},
+{0x3a09, 0x27},
+{0x3a0a, 0x00},
+{0x3a0b, 0xf6},
+{0x3a0e, 0x03},
+{0x3a0d, 0x04},
+{0x3a14, 0x03},
+{0x3a15, 0xd8},
+{0x4001, 0x02},
+{0x4004, 0x02},
+//{0x3000, 0x00},
+{0x3002, 0x1c},
+{0x3004, 0xff},
+{0x3006, 0xc3},
+{0x300e, 0x45}, //zhangzhao 45---25
+{0x302e, 0x08},
+{0x4300, 0x30},
+{0x501f, 0x00},
+{0x4713, 0x02},
+{0x4407, 0x04},
+{0x440e, 0x00},
+{0x460b, 0x37},
+{0x460c, 0x20},
+{0x3824, 0x04},
+  //SDE
+{0x5000, 0xa7},
+{0x5001, 0x83},
+{0x5309, 0x08},
+{0x530a, 0x30},
+{0x530b, 0x04},
+{0x530c, 0x06},
+{0x5480, 0x01}, 
+{0x5580, 0x06},
+{0x5583, 0x40},
+{0x5584, 0x40},
+{0x5585, 0x1c},
+{0x5586, 0x1c},
+{0x5587, 0x00},
+{0x5588, 0x01},
+{0x5589, 0x10},
+{0x558a, 0x00},
+{0x558b, 0x80},
+{0x5025, 0x00},
+  {0x3a0f, 0x33},
+  {0x3a10, 0x2b},
+  {0x3a1b, 0x33},
+  {0x3a1e, 0x2b},
+{0x3a11, 0x60},
+{0x3a1f, 0x14},
+//lens shading
+  {0x5800, 0x3F},  //yuxin modify 2011.11.14 ++
+  {0x5801, 0x27},
+  {0x5802, 0x20},
+  {0x5803, 0x20},
+  {0x5804, 0x2D},
+  {0x5805, 0x3F},
+  {0x5806, 0x14},
+  {0x5807, 0x0C},
+  {0x5808, 0x07},
+  {0x5809, 0x08},
+  {0x580A, 0x0C},
+  {0x580B, 0x18},
+  {0x580C, 0x0E},
+  {0x580D, 0x07},
+  {0x580E, 0x02},
+  {0x580F, 0x02},
+  {0x5810, 0x07},
+  {0x5811, 0x0E},
+  {0x5812, 0x0C},
+  {0x5813, 0x07},
+  {0x5814, 0x02},
+  {0x5815, 0x02},
+  {0x5816, 0x07},
+  {0x5817, 0x0F},
+  {0x5818, 0x13},
+  {0x5819, 0x0C},
+  {0x581A, 0x07},
+  {0x581B, 0x07},
+  {0x581C, 0x0B},
+  {0x581D, 0x15},
+  {0x581E, 0x3D},
+  {0x581F, 0x21},
+  {0x5820, 0x19},
+  {0x5821, 0x18},
+  {0x5822, 0x22},
+  {0x5823, 0x3F},          
+  {0x5824, 0x46},
+  {0x5825, 0x17},
+  {0x5826, 0x17},
+  {0x5827, 0x16},
+  {0x5828, 0x36},
+  {0x5829, 0x26},
+  {0x582A, 0x33},   //copy from TD's code
+  {0x582B, 0x22},
+  {0x582C, 0x23},
+  {0x582D ,0x15},
+  {0x582E ,0x15},
+  {0x582F, 0x41},  //copy from TD's code
+  {0x5830, 0x41},
+  {0x5831, 0x32},
+  {0x5832, 0x14},
+  {0x5833, 0x26},
+  {0x5834, 0x22},   //copy from TD's code
+  {0x5835, 0x22},
+  {0x5836, 0x23},  
+  
+  {0x5837, 0x16},
+  {0x5838, 0x36},
+  {0x5839, 0x17},
+  {0x583A, 0x17},
+  {0x583B, 0x16},
+  {0x583C, 0x47},
+  {0x583d, 0xce},    //copy from TD's code //yuxin modify 2011.11.14 --
+//lenc mini Q
+{0x583e, 0x20},
+{0x583f, 0x10},
+{0x5840, 0x00},
+  {0x5841, 0x0d},
+  //color matrix 
+  //zte bsp,yuxin modify color matrix,2011.11.22,++
+  {0x5381, 0x26},
+  {0x5382, 0x4E},
+  {0x5383, 0x0C},
+  {0x5384, 0x05},
+  {0x5385, 0x71},
+  {0x5386, 0x76},
+  {0x5387, 0x79},
+  {0x5388, 0x6D},
+  {0x5389, 0x0C},
+  {0x538A, 0x01},
+  {0x538B, 0x98},
+  //zte bsp,yuxin modify color matrix,2011.11.22,--
+//de-noise sharpness
+  {0x5300, 0x08},
+  {0x5301, 0x20},
+{0x5302,0x14},//1206
+  {0x5303, 0x00},
+{0x5308,0x35},
+  {0x5304, 0x08},
+  {0x5305, 0x20},
+  {0x5306, 0x18},// {0x5306, 0x08},//yuxin modify for sdec
+  {0x5307, 0x20},
+//Ken Xu add 20110325 for BLC auto update
+{0x4005, 0x1a}, // always update BLC
+
+
+{0x3708, 0x64},//kenxu @20110707 from 0x62-->0x64 short exposure color shift 
+{0x3c01, 0xb4}, // 50Hz banding
+{0x3c00, 0x04},
+{0x3a08, 0x01},
+{0x3a09, 0xea},
+{0x3a0e, 0x02},
+{0x3a00, 0x78}, // 0x7c enable night mode; 0x78 disable night mode
+{0x3a14, 0x03}, // max 50Hz banding step for normal mode
+{0x3a15, 0xd8},
+{0x5183, 0x14},
+{0x4009, 0x10},//blc, modifed for SNR
+  //MIPI Clock gate and send line package each line
+  {0x4800, 0x34},
+  //reset MIPI
+  {0x3003, 0x03}, 
+  {0x3003, 0x01}, 
+  //release software reset
+//awb
+  //kenxu update @20120215
+{0x5180, 0xff},
+{0x5181, 0xf2},
+{0x5182, 0x0 },
+{0x5183, 0x14},
+{0x5184, 0x25},
+{0x5185, 0x24},
+{0x5186, 0x13},
+{0x5187, 0x30},
+{0x5188, 0x15},
+{0x5189, 0x77},
+{0x518a, 0x5d},
+{0x518b, 0xff},
+{0x518c, 0xaf},
+{0x518d, 0x44},
+{0x518e, 0x39},
+{0x518f, 0x57},
+{0x5190, 0x48},
+{0x5191, 0xf8},
+{0x5192, 0x4 },
+{0x5193, 0x70},
+{0x5194, 0xf0},
+{0x5195, 0xf0},
+{0x5196, 0x3 },
+{0x5197, 0x1 },
+{0x5198, 0x6 },
+{0x5199, 0x67},
+{0x519a, 0x4 },
+{0x519b, 0x4 },
+{0x519c, 0x4 },
+{0x519d, 0xf6},
+{0x519e, 0x38},
+//gamma
+  {0x5481, 0x08},  //yuxin modify 2011.11.14 ++
+  {0x5482, 0x14},
+  {0x5483, 0x28},
+  {0x5484, 0x51},
+  {0x5485, 0x65},
+  {0x5486, 0x71},
+  {0x5487, 0x7d},
+  {0x5488, 0x87},
+  {0x5489, 0x91},
+  {0x548a, 0x9a},
+  {0x548b, 0xaa},
+  {0x548c, 0xb8},
+  {0x548d, 0xcd},
+  {0x548e, 0xdd},
+  {0x548f, 0xea},
+  {0x5490, 0x1d},  //yuxin modify 2011.11.14 --
+
+
+
+//auto uv
+/*{0x5580, 0x02},
+{0x5588, 0x00},
+{0x5583, 0x40},
+{0x5584, 0x20},
+{0x5589, 0x40},
+{0x558a, 0x00},
+{0x558b, 0x80},*/  //ECID:0000] zhangzhao 2012-3-8 modified for brightness no effect
+  //AEC AND AGC enable
+  {0x3503, 0x00},
+{0x4837, 0x10},//zhangzhao 10---2b
+{0x3008, 0x02},  
+/* ZTE: modified by yangchunni for improve preview setting to 25fps 20110525 -- */
+
+};
+
+
+
+
+static struct msm_camera_i2c_reg_conf ov5640_snapshot_5m_array[] ={
+{0x4202, 0x0f}, //streaming off
+{0x3035, 0x21},
+{0x3036, 0x54}, 
+#if defined ( CONFIG_PROJECT_P825A10 ) || defined ( CONFIG_PROJECT_P825F01 ) || defined ( CONFIG_PROJECT_P865F01 ) || defined ( CONFIG_PROJECT_P865V30 ) ||defined ( CONFIG_PROJECT_P865V20)
+{0x3820, 0x40},//0x46 yuxin modify for flip 2012.05.28
+{0x3821, 0x06},//0x00
+#else
+{0x3820, 0x46},
+{0x3821, 0x00},
+#endif
+{0x3814, 0x11},
+{0x3815, 0x11},
+{0x3800, 0x00},
+{0x3801, 0x00},
+{0x3802, 0x00},
+{0x3803, 0x00},
+{0x3804, 0x0a},
+{0x3805, 0x3f},
+{0x3806, 0x07},
+{0x3807, 0x9f},
+{0x3808, 0x0a},
+{0x3809, 0x20},
+{0x380a, 0x07},
+{0x380b, 0x98},
+{0x380c, 0x0b},
+{0x380d, 0x1c},
+{0x380e, 0x07},
+{0x380f, 0xb0},
+{0x3810, 0x00},
+{0x3811, 0x10},
+{0x3812, 0x00},
+  {0x3813, 0x06},
+{0x3618, 0x04},              
+  {0x3612, 0x4b},
+{0x3709, 0x12}, 
+{0x370c, 0x00}, 
+{0x3a02, 0x07}, 
+{0x3a03, 0xb0}, 
+{0x3a0e, 0x06}, 
+{0x3a0d, 0x08}, 
+{0x3a14, 0x07}, 
+{0x3a15, 0xb0}, 
+{0x4004, 0x06}, 
+  {0x4837, 0x17},   //{0x4837, 0x09},0x19,yuxin modify for capture green screen 
+{0x5001, 0x83}, 
+  {0x3708, 0x21},
+  {0x3c01, 0xb4},
+  {0x3a08, 0x01},
+  {0x3a09, 0x27},  
+  {0x3a0e, 0x06},  //{0x3a0e, 0x03},//yuxin copy from TD pad code 11.17
+  {0x3a14, 0x07},  //yuxin copy from TD pad code 11.17
+  {0x3a15, 0xb0},  //yuxin copy from TD pad code 11.17
+  {0x5183, 0x14},
+  {0x5302, 0x14},
+  {0x5303, 0x00},
+};
+
+
+
+
+
+struct msm_camera_i2c_reg_conf ov5640_capture_to_preview_settings_array[] = {
+/* 1280*960 25fps*/
+{0x3035, 0x21}, 
+{0x3036, 0x5d}, 
+#if defined ( CONFIG_PROJECT_P825A10 ) || defined ( CONFIG_PROJECT_P825F01 ) || defined ( CONFIG_PROJECT_P865F01 ) || defined ( CONFIG_PROJECT_P865V30 ) ||defined ( CONFIG_PROJECT_P865V20)
+{0x3820, 0x40},//0x46 yuxin modify for flip 2012.05.28
+{0x3821, 0x06},//0x00
+#else
+{0x3820, 0x46},
+{0x3821, 0x00},
+#endif
+{0x3814, 0x31},
+{0x3815, 0x31},
+{0x3800, 0x00},
+{0x3801, 0x00},
+{0x3802, 0x00},
+{0x3803, 0x04},
+{0x3804, 0x0a},
+{0x3805, 0x3f},
+{0x3806, 0x07},
+{0x3807, 0x9b},
+{0x3808, 0x05},
+{0x3809, 0x00},
+{0x380a, 0x03},
+{0x380b, 0xc0},
+{0x380c, 0x07},
+{0x380d, 0x68},
+{0x380e, 0x03},
+{0x380f, 0xd8},
+{0x3810, 0x00},
+{0x3811, 0x10},
+{0x3812, 0x00},
+{0x3813, 0x06},
+{0x3618, 0x00},
+{0x3612, 0x29},
+{0x3709, 0x52},
+{0x370c, 0x03},
+{0x3a02, 0x03},
+{0x3a03, 0xd8},
+{0x3a0e, 0x03},
+{0x3a0d, 0x04},
+{0x3a14, 0x03},
+{0x3a15, 0xd8},
+{0x4004, 0x02},
+{0x4837, 0x10},//zhangzhao 10----2b
+{0x5001, 0x83},
+{0x3503, 0x00},
+{0x3708, 0x64},//kenxu @20110707 from 0x62-->0x64 short exposure color shift 
+//{0x3c01,0xb4},
+//{0x3c00,0x04},
+//{0x3a08,0x01},
+//{0x3a09, 0xea},
+//{0x3a0e, 0x02},
+{0x3a00, 0x78}, // 0x7c enable night mode; 0x78 disable night mode
+{0x3a14, 0x03}, // max 50Hz banding step for normal mode
+{0x3a15, 0xd8},
+{0x5183, 0x14},
+{0x4009,0x10},  //zhangzhao return preview the viewfinder more brighter problem
+//banding
+{0x3a08, 0x00},
+{0x3a09, 0xf5},
+{0x3a0a, 0x00},
+{0x3a0b, 0xcc},
+{0x3a0e, 0x04},
+{0x3a0d, 0x04},
+{0x3c01, 0x84},
+{0x3c00, 0x04},
+/*ZTEBSP yuxin modify for cap->pre green screen after setting mono and sepia 2012.07.03 ++ */
+//{0x5588, 0x09}, //auto uv enable
+//{0x5583, 0x40}, //modify by jacky_xi
+//{0x5584, 0x20}, // modify by jacky_xi
+/*ZTEBSP yuxin modify for cap->pre green screen after setting mono and sepia 2012.07.03 -- */
+//{0x4202, 0x00},
+};
+
+
+/*[ECID:0000]ZTEBSP yuxin add for auto focus,2012.05.16 ++*/
+/* no overlay display */
+//zhangzhao make the sigle file for auto focus regs ov5640af.h
+
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+struct msm_camera_i2c_reg_conf ov5640_af_settings_array_end[] = {
+  {0x3022, 0x00},
+  {0x3023, 0x00},
+  {0x3024, 0x00},
+  {0x3025, 0x00},
+  {0x3026, 0x00},
+  {0x3027, 0x00},
+  {0x3028, 0x00},
+  {0x3029, 0x7F},
+  {0x3000, 0x00},
+  //read the 3029 reg,if its value is not 0x70,return fail
+  {0x3029,0x70,MSM_CAMERA_I2C_BYTE_DATA,MSM_CAMERA_I2C_CMD_LOAD},
+};
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time end
+
+/*[ECID:0000]ZTEBSP yuxin add for auto focus,2012.05.16 --*/
+
+
+/*ZTEBSP yuxin add for ov5640 effect settings,2012.05.16 ++*/
+// saturation
+static struct msm_camera_i2c_reg_conf ov5640_saturation[][14] = 
+{	
+   	{//level 0
+           {0x3212, 0x03},  //start group 3
+           {0x5381, 0x1c},
+           {0x5382, 0x5a},
+           {0x5383, 0x06},
+           {0x5384, 0x0c},
+           {0x5385, 0x30},
+           {0x5386, 0x3d},
+           {0x5387, 0x3e},
+           {0x5388, 0x3d},
+           {0x5389, 0x01},
+           {0x538A, 0x01},
+           {0x538B, 0x98},
+           {0x3212, 0x13}, //end group 3
+           {0x3212, 0xa3}, //launch group 3
+	},
+	
+	{//level 1
+     	    {0x3212, 0x03},  //start group 3
+           {0x5381, 0x1c},
+           {0x5382, 0x5a},
+           {0x5383, 0x06},
+           {0x5384, 0x15},
+           {0x5385, 0x52},
+           {0x5386, 0x66},
+           {0x5387, 0x68},
+           {0x5388, 0x66},
+           {0x5389, 0x02},
+           {0x538A, 0x01},
+           {0x538B, 0x98},
+           {0x3212, 0x13}, //end group 3
+           {0x3212, 0xa3}, //launch group 3
+	},
+	
+	{//level 2 -default level
+           {0x3212, 0x03},  //start group 3
+           {0x5381, 0x26},
+           {0x5382, 0x4E},
+           {0x5383, 0x0C},
+           {0x5384, 0x05},
+           {0x5385, 0x71},
+           {0x5386, 0x76},
+           {0x5387, 0x79},
+           {0x5388, 0x6D},
+           {0x5389, 0x0C},
+           {0x538A, 0x01},
+           {0x538B, 0x98},
+           {0x3212, 0x13}, //end group 3
+           {0x3212, 0xa3}, //launch group 3
+	},
+	
+	{//level 3
+           {0x3212, 0x03},  //start group 3
+           {0x5381, 0x1c},
+           {0x5382, 0x5a},
+           {0x5383, 0x06},
+           {0x5384, 0x1f},
+           {0x5385, 0x7a},
+           {0x5386, 0x9a},
+           {0x5387, 0x9c},
+           {0x5388, 0x9a},
+           {0x5389, 0x02},
+           {0x538A, 0x01},
+           {0x538B, 0x98},
+           {0x3212, 0x13}, //end group 3
+           {0x3212, 0xa3}, //launch group 3
+	},
+	
+	{//level 4
+           {0x3212, 0x03},  //start group 3
+           {0x5381, 0x1c},
+           {0x5382, 0x5a},
+           {0x5383, 0x06},
+           {0x5384, 0x2b},
+           {0x5385, 0xab},
+           {0x5386, 0xd6},
+           {0x5387, 0xda},
+           {0x5388, 0xd6},
+           {0x5389, 0x04},
+           {0x538A, 0x01},
+           {0x538B, 0x98},
+           {0x3212, 0x13}, //end group 3
+           {0x3212, 0xa3}, //launch group 3
+	},
+};
+
+static struct msm_camera_i2c_conf_array ov5640_saturation_confs[][1] =
+{	
+   {{ov5640_saturation[0],		ARRAY_SIZE(ov5640_saturation[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},	},
+   {{ov5640_saturation[1],		ARRAY_SIZE(ov5640_saturation[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},	},
+   {{ov5640_saturation[2],		ARRAY_SIZE(ov5640_saturation[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},	},
+   {{ov5640_saturation[3],		ARRAY_SIZE(ov5640_saturation[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},	},
+   {{ov5640_saturation[4],		ARRAY_SIZE(ov5640_saturation[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},	},
+ 
+};
+	
+static int ov5640_saturation_enum_map[] = 
+{	
+   MSM_V4L2_SATURATION_L0,	
+   MSM_V4L2_SATURATION_L1,	
+   MSM_V4L2_SATURATION_L2,
+   MSM_V4L2_SATURATION_L3,
+   MSM_V4L2_SATURATION_L4,
+  
+};
+		
+static struct msm_camera_i2c_enum_conf_array ov5640_saturation_enum_confs = {	
+	.conf = &ov5640_saturation_confs[0][0],	
+       .conf_enum = ov5640_saturation_enum_map,
+       .num_enum = ARRAY_SIZE(ov5640_saturation_enum_map),	
+       .num_index = ARRAY_SIZE(ov5640_saturation_confs),	
+       .num_conf = ARRAY_SIZE(ov5640_saturation_confs[0]),	
+       .data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+
+
+// contrast
+static struct msm_camera_i2c_reg_conf ov5640_contrast[][5] = {
+      	/*{//level 0
+         {0x3212,0x03},
+         {0x5586, 0x28},
+         {0x5585, 0x18},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+	},*/
+
+       {//level 1
+         {0x3212,0x03},
+         {0x5586, 0x24},
+         {0x5585, 0x10},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+       },
+
+       {//level 2
+         {0x3212,0x03},
+         {0x5586, 0x20},
+         {0x5585, 0x00},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+       },
+
+       {//level 3
+         {0x3212,0x03},
+         {0x5586, 0x1c},
+         {0x5585, 0x1c},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+       },
+
+       {//level 4
+         {0x3212,0x03},
+         {0x5586, 0x18},
+         {0x5585, 0x18},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+       },
+       {//level 5
+         {0x3212,0x03},
+         {0x5586, 0x14},
+         {0x5585, 0x14},
+         {0x3212, 0x13},
+         {0x3212, 0xa3},
+       },		 
+};
+
+
+//static struct msm_camera_i2c_reg_conf ov5640_enable_contrast[] = {	
+ // {0x5580, 0x04, MSM_CAMERA_I2C_BYTE_DATA, MSM_CAMERA_I2C_CMD_READ},
+//};
+
+
+static struct msm_camera_i2c_conf_array ov5640_contrast_confs[][1] = {
+	{ {ov5640_contrast[0],
+		ARRAY_SIZE(ov5640_contrast[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	 //  {ov5640_enable_contrast,
+	//	ARRAY_SIZE(ov5640_enable_contrast), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	  
+	},
+		
+	{ {ov5640_contrast[1],
+		ARRAY_SIZE(ov5640_contrast[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	//   {ov5640_enable_contrast,
+	//	ARRAY_SIZE(ov5640_enable_contrast), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	   
+	},
+	{ {ov5640_contrast[2],
+		ARRAY_SIZE(ov5640_contrast[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	//   {ov5640_enable_contrast,
+	//	ARRAY_SIZE(ov5640_enable_contrast), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	 
+	},
+		
+	{ {ov5640_contrast[3],
+		ARRAY_SIZE(ov5640_contrast[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	//   {ov5640_enable_contrast,
+	//	ARRAY_SIZE(ov5640_enable_contrast), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	   
+	},
+		
+	{ {ov5640_contrast[4],
+		ARRAY_SIZE(ov5640_contrast[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	//   {ov5640_enable_contrast,
+	//	ARRAY_SIZE(ov5640_enable_contrast), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	   
+	},
+		
+
+};
+
+static int ov5640_contrast_enum_map[] = {
+	MSM_V4L2_CONTRAST_L0,
+	MSM_V4L2_CONTRAST_L1,
+	MSM_V4L2_CONTRAST_L2,
+	MSM_V4L2_CONTRAST_L3,
+	MSM_V4L2_CONTRAST_L4,	
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_contrast_enum_confs = {
+	.conf = &ov5640_contrast_confs[0][0],
+	.conf_enum = ov5640_contrast_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_contrast_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_contrast_confs),
+	.num_conf = ARRAY_SIZE(ov5640_contrast_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+
+// sharpness
+static struct msm_camera_i2c_reg_conf ov5640_sharpness[][9] = {
+	{//level 0
+          {0x5308, 0x65},
+          {0x5300, 0x08},
+          {0x5301, 0x10},
+          {0x5302, 0x18},
+          {0x5303, 0x00},
+          {0x5309, 0x08},
+          {0x530a, 0x10},
+          {0x530b, 0x04},
+          {0x530c, 0x10}, 
+	},
+       {//level 1
+          {0x5308, 0x65},
+          {0x5300, 0x08},
+          {0x5301, 0x10},
+          {0x5302, 0x10},
+          {0x5303, 0x00},
+          {0x5309, 0x08},
+          {0x530a, 0x10},
+          {0x530b, 0x04},
+          {0x530c, 0x10}, 
+	 },
+	 {//level 2 -auto mode
+          {0x5308, 0x25},
+          {0x5300, 0x08},
+          {0x5301, 0x20},
+          {0x5302, 0x14},
+          {0x5303, 0x00},
+          {0x5309, 0x08},
+          {0x530a, 0x30},
+          {0x530b, 0x04},
+          {0x530c, 0x06},
+	 },
+       {//level 3
+          {0x5308, 0x65},
+          {0x5300, 0x08},
+          {0x5301, 0x10},
+          {0x5302, 0x08},
+          {0x5303, 0x00},
+          {0x5309, 0x08},
+          {0x530a, 0x10},
+          {0x530b, 0x04},
+          {0x530c, 0x10}, 
+       },
+       {//level 4
+          {0x5308, 0x65},
+          {0x5300, 0x08},
+          {0x5301, 0x10},
+          {0x5302, 0x02},
+          {0x5303, 0x00},
+          {0x5309, 0x08},
+          {0x530a, 0x10},
+          {0x530b, 0x04},
+          {0x530c, 0x10}, 
+       },
+	
+};
+
+static struct msm_camera_i2c_conf_array ov5640_sharpness_confs[][1] = {
+	{
+		{ov5640_sharpness[0],
+		ARRAY_SIZE(ov5640_sharpness[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_sharpness[1],
+		ARRAY_SIZE(ov5640_sharpness[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_sharpness[2],
+		ARRAY_SIZE(ov5640_sharpness[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_sharpness[3],
+		ARRAY_SIZE(ov5640_sharpness[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_sharpness[4],
+		ARRAY_SIZE(ov5640_sharpness[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},	
+	
+	
+};
+
+static int ov5640_sharpness_enum_map[] = {
+	MSM_V4L2_SHARPNESS_L0,
+	MSM_V4L2_SHARPNESS_L1,
+	MSM_V4L2_SHARPNESS_L2,
+	MSM_V4L2_SHARPNESS_L3,
+	MSM_V4L2_SHARPNESS_L4,	
+		
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_sharpness_enum_confs = {
+	.conf = &ov5640_sharpness_confs[0][0],
+	.conf_enum = ov5640_sharpness_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_sharpness_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_sharpness_confs),
+	.num_conf = ARRAY_SIZE(ov5640_sharpness_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+//
+
+// brightness
+static struct msm_camera_i2c_reg_conf ov5640_brightness[][2] = {
+       {//level 0
+          //{0x3212, 0x03},
+          {0x5587, 0x40},
+          {0x5588, 0x09},
+          //{0x3212, 0x13},
+          //{0x3212, 0xa3},
+	 },
+	 
+     	{//level 1
+          //{0x3212, 0x03},
+          {0x5587, 0x20},
+          {0x5588, 0x09},
+          //{0x3212, 0x13},
+          //{0x3212, 0xa3},
+	 },
+	 {//level 2
+          //{0x3212, 0x03},
+          {0x5587, 0x00},
+          {0x5588, 0x01},
+          //{0x3212, 0x13},
+          //{0x3212, 0xa3},
+	 },
+	 {//level 3
+          //{0x3212, 0x03},
+          {0x5587, 0x20},
+          {0x5588, 0x01},
+          //{0x3212, 0x13},
+          //{0x3212, 0xa3},
+	 },
+	 {//level 4
+          //{0x3212, 0x03},
+          {0x5587, 0x40},
+          {0x5588, 0x01},
+          //{0x3212, 0x13},
+          //{0x3212, 0xa3},
+	 },
+};
+
+
+
+static struct msm_camera_i2c_conf_array ov5640_brightness_confs[][1] = {
+	
+	{{ov5640_brightness[0],
+		ARRAY_SIZE(ov5640_brightness[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+	
+	{{ov5640_brightness[1],
+		ARRAY_SIZE(ov5640_brightness[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_brightness[2],
+		ARRAY_SIZE(ov5640_brightness[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_brightness[3],
+		ARRAY_SIZE(ov5640_brightness[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_brightness[4],
+		ARRAY_SIZE(ov5640_brightness[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},},
+		
+		
+};
+
+static int ov5640_brightness_enum_map[] = {
+	MSM_V4L2_BRIGHTNESS_L0,
+	MSM_V4L2_BRIGHTNESS_L1,
+	MSM_V4L2_BRIGHTNESS_L2,
+	MSM_V4L2_BRIGHTNESS_L3,
+	MSM_V4L2_BRIGHTNESS_L4,	
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_brightness_enum_confs = {
+	.conf = &ov5640_brightness_confs[0][0],
+	.conf_enum = ov5640_brightness_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_brightness_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_brightness_confs),
+	.num_conf = ARRAY_SIZE(ov5640_brightness_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+//
+
+// exposure
+static struct msm_camera_i2c_reg_conf ov5640_exposure[][6] = {
+	{// -1.7EV    -3
+           {0x3A0F, 0x10}, 
+           {0x3A10, 0x08},
+           {0x3A1B, 0x10}, 
+           {0x3A1E, 0x08}, 
+           {0x3A11, 0x20},   
+           {0x3A1F, 0x10},
+       },
+
+
+	{// -1.7EV    -2
+           {0x3A0F, 0x20}, 
+           {0x3A10, 0x18},
+           {0x3A11, 0x41},   
+           {0x3A1B, 0x20}, 
+           {0x3A1E, 0x18}, 
+           {0x3A1F, 0x10},
+       },
+       
+	{ // -1.0EV   -1
+           {0x3A0F, 0x30}, 
+           {0x3A10, 0x28},     
+           {0x3A11, 0x61}, 
+           {0x3A1B, 0x30}, 
+           {0x3A1E, 0x28}, 
+           {0x3A1F, 0x10}, 
+       },
+       
+	{//  0
+           {0x3A0F, 0x38}, 
+           {0x3A10, 0x30},     
+           {0x3A11, 0x61}, 
+           {0x3A1B, 0x38}, 
+           {0x3A1E, 0x30}, 
+           {0x3A1F, 0x10}, 
+       },
+       
+	{//+1
+    	    {0x3A0F, 0x50}, 
+           {0x3A10, 0x48},     
+           {0x3A11, 0x90}, 
+           {0x3A1B, 0x50}, 
+           {0x3A1E, 0x48}, 
+           {0x3A1F, 0x20}, 
+	},
+	
+	/*{ //+2
+           {0x3A0F, 0x60}, 
+           {0x3A10, 0x58},     
+           {0x3A11, 0xA0}, 
+           {0x3A1B, 0x60}, 
+           {0x3A1E, 0x58}, 
+           {0x3A1F, 0x20}, 
+	},*/
+
+};
+
+
+static struct msm_camera_i2c_conf_array ov5640_exposure_confs[][1] = {
+	
+	{{ov5640_exposure[0],
+		ARRAY_SIZE(ov5640_exposure[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+	
+	{{ov5640_exposure[1],
+		ARRAY_SIZE(ov5640_exposure[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_exposure[2],
+		ARRAY_SIZE(ov5640_exposure[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_exposure[3],
+		ARRAY_SIZE(ov5640_exposure[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},},	
+		
+	{{ov5640_exposure[4],
+		ARRAY_SIZE(ov5640_exposure[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},},
+		
+	
+};
+
+static int ov5640_exposure_enum_map[] = {
+	MSM_V4L2_EXPOSURE_N2,
+	MSM_V4L2_EXPOSURE_N1,
+	MSM_V4L2_EXPOSURE_D,
+	MSM_V4L2_EXPOSURE_P1,
+	MSM_V4L2_EXPOSURE_P2,
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_exposure_enum_confs = {
+	.conf = &ov5640_exposure_confs[0][0],
+	.conf_enum = ov5640_exposure_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_exposure_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_exposure_confs),
+	.num_conf = ARRAY_SIZE(ov5640_exposure_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+//
+
+// special  effect
+static struct msm_camera_i2c_reg_conf ov5640_effect[][7] = {
+    { //effect_off
+       {0x3212, 0x03}, 
+       {0x5580, 0x06}, 
+       {0x5583, 0x40}, 
+       {0x5584, 0x10},//0x10 
+       {0x5003, 0x08},
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},  
+    },
+
+    {  //effect_mono
+       {0x3212, 0x03}, 
+       {0x5580, 0x1e}, 
+       {0x5583, 0x80}, 
+       {0x5584, 0x80}, 
+       {0x5003, 0x08},
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},        
+    },
+
+    { //effect_negative
+       {0x3212, 0x03}, 
+       {0x5580, 0x40}, 
+       {0x5003, 0x08},
+       {0x5583, 0x40}, 
+       {0x5584, 0x10}, 
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},  
+    },
+  
+    {//SOLARIZE
+       {0x3212, 0x03}, 
+       {0x5580, 0x06}, 
+       {0x5583, 0x40}, 
+       {0x5584, 0x10},
+       {0x5003, 0x09},  
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},
+    },
+
+    {//SEPIA
+       {0x3212, 0x03}, 
+       {0x5580, 0x1e}, 
+       {0x5583, 0x40}, 
+       {0x5584, 0xa0},
+       {0x5003, 0x08},  
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},
+    },
+
+    { 
+    //redish
+       {0x3212, 0x03}, 
+       {0x5580, 0x1e}, 
+       {0x5583, 0x80}, 
+       {0x5584, 0xc0}, 
+       {0x5003, 0x08},
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},  
+    },
+
+   { 
+    //blueish
+       {0x3212, 0x03}, 
+       {0x5580, 0x1e}, 
+       {0x5583, 0xa0}, 
+       {0x5584, 0x40}, 
+       {0x5003, 0x08},
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},  
+    },
+    
+    { 
+    //greenish
+       {0x3212, 0x03}, 
+       {0x5580, 0x1e}, 
+       {0x5583, 0x60}, 
+       {0x5584, 0x60}, 
+       {0x5003, 0x08},
+       {0x3212, 0x13}, 
+       {0x3212, 0xa3},  
+    },
+    
+
   
 };
 
-static struct msm_camera_i2c_reg_conf ov5640_snap_settings[] = { 
+static struct msm_camera_i2c_conf_array ov5640_effect_confs[][1] = {
+	{
+		{ov5640_effect[0],
+		ARRAY_SIZE(ov5640_effect[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+		
+	{
+		{ov5640_effect[1],
+		ARRAY_SIZE(ov5640_effect[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_effect[2],
+		ARRAY_SIZE(ov5640_effect[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_effect[3],
+		ARRAY_SIZE(ov5640_effect[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_effect[4],
+		ARRAY_SIZE(ov5640_effect[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+		
+	{
+		{ov5640_effect[5],
+		ARRAY_SIZE(ov5640_effect[5]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_effect[6],
+		ARRAY_SIZE(ov5640_effect[6]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_effect[7],
+		ARRAY_SIZE(ov5640_effect[7]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+		
 };
 
+static int ov5640_effect_enum_map[] = {
+	MSM_V4L2_EFFECT_OFF,
+	MSM_V4L2_EFFECT_MONO,
+	MSM_V4L2_EFFECT_NEGATIVE,
+	MSM_V4L2_EFFECT_SOLARIZE,
+	MSM_V4L2_EFFECT_SEPIA,
+	MSM_V4L2_EFFECT_REDISH,
+	MSM_V4L2_EFFECT_BLUEISH,
+	MSM_V4L2_EFFECT_GREENISH,
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_effect_enum_confs = {
+	.conf = &ov5640_effect_confs[0][0],
+	.conf_enum = ov5640_effect_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_effect_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_effect_confs),
+	.num_conf = ARRAY_SIZE(ov5640_effect_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+//
+
+// awb
+static struct msm_camera_i2c_reg_conf ov5640_awb[][10] = {	
+	{ //MSM_V4L2_WB_MIN_MINUS_1,not used
+	  {0x3212, 0x03}, 
+         {0x3406, 0x00},     
+         {0x3400, 0x04}, 
+         {0x3401, 0x00}, 
+         {0x3402, 0x04}, 
+         {0x3403, 0x00}, 
+         {0x3404, 0x04}, 
+         {0x3405, 0x00}, 
+         {0x3212, 0x13}, 
+         {0x3212, 0xa3}, 
+	}, 
+	
+	{ // wb_auto
+	  {0x3212, 0x03}, 
+         {0x3406, 0x00},     
+         {0x3400, 0x04}, 
+         {0x3401, 0x00}, 
+         {0x3402, 0x04}, 
+         {0x3403, 0x00}, 
+         {0x3404, 0x04}, 
+         {0x3405, 0x00}, 
+         {0x3212, 0x13}, 
+         {0x3212, 0xa3}, 
+	}, 
+       {//MSM_V4L2_WB_CUSTOM,not used
+         {0x3212, 0x03}, 
+         {0x3406, 0x01},     
+         {0x3400, 0x04}, 
+         {0x3401, 0x10}, 
+         {0x3402, 0x04}, 
+         {0x3403, 0x00}, 
+         {0x3404, 0x08}, 
+         {0x3405, 0x40}, 
+         {0x3212, 0x13}, 
+         {0x3212, 0xa3}, 
+	},
+
+	{//INCANDESCENT,  //白炽
+         {0x3212, 0x03}, 
+         {0x3406, 0x01},     
+         {0x3400, 0x04}, 
+         {0x3401, 0x10}, 
+         {0x3402, 0x04}, 
+         {0x3403, 0x00}, 
+         {0x3404, 0x08}, 
+         {0x3405, 0x40}, 
+         {0x3212, 0x13}, 
+         {0x3212, 0xa3}, 
+	},
+
+       {//FLUORESCENT,    //荧光
+         {0x3212, 0x03}, 
+         {0x3406, 0x01},     
+         {0x3400, 0x05}, 
+         {0x3401, 0x48}, 
+         {0x3402, 0x04}, 
+         {0x3403, 0x00}, 
+         {0x3404, 0x07}, 
+         {0x3405, 0xcf}, 
+         {0x3212, 0x13}, 
+         {0x3212, 0xa3}, 
+       },
+
+       { //daylight
+          {0x3212, 0x03}, 
+          {0x3406, 0x01},     
+          {0x3400, 0x06}, 
+          {0x3401, 0x1c}, 
+          {0x3402, 0x04}, 
+          {0x3403, 0x00}, 
+          {0x3404, 0x04}, 
+          {0x3405, 0xf3}, 
+          {0x3212, 0x13}, 
+          {0x3212, 0xa3}, 
+       },
+
+       { //cloudy
+           {0x3212, 0x03}, 
+           {0x3406, 0x01},     
+           {0x3400, 0x06}, 
+           {0x3401, 0x48}, 
+           {0x3402, 0x04}, 
+           {0x3403, 0x00}, 
+           {0x3404, 0x04}, 
+           {0x3405, 0x03}, //ECID:0000 zhangzhao 2012-7-2 solve cloudy no effect  0xd3 --->0x03
+           {0x3212, 0x13}, 
+           {0x3212, 0xa3},
+       },
+};
+
+static struct msm_camera_i2c_conf_array ov5640_awb_confs[][1] = {
+	{
+		{ov5640_awb[0],
+		ARRAY_SIZE(ov5640_awb[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[1],
+		ARRAY_SIZE(ov5640_awb[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[2],
+		ARRAY_SIZE(ov5640_awb[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[3],
+		ARRAY_SIZE(ov5640_awb[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[4],
+	       ARRAY_SIZE(ov5640_awb[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[5],
+		ARRAY_SIZE(ov5640_awb[5]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_awb[6],
+	       ARRAY_SIZE(ov5640_awb[6]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},	
+	
+};
+
+static int ov5640_awb_enum_map[] = {	
+	MSM_V4L2_WB_OFF,//not used
+	MSM_V4L2_WB_AUTO ,//= 1
+	MSM_V4L2_WB_CUSTOM,  //not used
+	MSM_V4L2_WB_INCANDESCENT, //白炽
+	MSM_V4L2_WB_FLUORESCENT,   //荧光
+	MSM_V4L2_WB_DAYLIGHT,
+	MSM_V4L2_WB_CLOUDY_DAYLIGHT,
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_awb_enum_confs = {
+	.conf = &ov5640_awb_confs[0][0],
+	.conf_enum = ov5640_awb_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_awb_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_awb_confs),
+	.num_conf = ARRAY_SIZE(ov5640_awb_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+
+//ISO
+static struct msm_camera_i2c_reg_conf ov5640_iso[][2] = {	
+	
+	{ //auto
+	   {0x3a18,0x00},
+          {0x3a19,0xf8},  //0xfc  yuxin modify 0628
+	}, 
+	
+       { //MSM_V4L2_ISO_DEBLUR ,not used
+	   {0x3a18,0x00},
+          {0x3a19,0xfc},
+	}, 
+	
+	{//iso_100
+   	   {0x3a18,0x00},
+          {0x3a19,0x20},
+	},
+
+       {//iso200
+          {0x3a18,0x00},
+          {0x3a19,0x40},
+       },
+
+       { //iso400
+          {0x3a18,0x00},
+          {0x3a19,0x80},
+       },
+
+       { //iso800
+          {0x3a18,0x00},
+          {0x3a19,0xfc},
+       },
+       
+       { //iso1600
+          {0x3a18,0x01},
+          {0x3a19,0xfc},
+       },
+};
+
+static struct msm_camera_i2c_conf_array ov5640_iso_confs[][1] = {
+	{
+		{ov5640_iso[0],
+		ARRAY_SIZE(ov5640_iso[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_iso[1],
+		ARRAY_SIZE(ov5640_iso[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_iso[2],
+		ARRAY_SIZE(ov5640_iso[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_iso[3],
+		ARRAY_SIZE(ov5640_iso[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_iso[4],
+	  ARRAY_SIZE(ov5640_iso[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_iso[5],
+	  ARRAY_SIZE(ov5640_iso[5]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},	
+	
+	{
+		{ov5640_iso[6],
+	  ARRAY_SIZE(ov5640_iso[6]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},	
+	
+};
+
+static int ov5640_iso_enum_map[] = {	
+	MSM_V4L2_ISO_AUTO,
+	MSM_V4L2_ISO_DEBLUR,//not used
+	MSM_V4L2_ISO_100,
+	MSM_V4L2_ISO_200,
+	MSM_V4L2_ISO_400,
+	MSM_V4L2_ISO_800,
+	MSM_V4L2_ISO_1600,
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_iso_enum_confs = {
+	.conf = &ov5640_iso_confs[0][0],
+	.conf_enum = ov5640_iso_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_iso_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_iso_confs),
+	.num_conf = ARRAY_SIZE(ov5640_iso_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+
+
+//anti-banding
+static struct msm_camera_i2c_reg_conf ov5640_antibanding[][14] = {		
+{ //auto
+         {0x3622, 0x01},
+         {0x3635, 0x13},
+         {0x3634, 0x40},
+         {0x3c01, 0xb4},
+         {0x3c00, 0x04},
+         {0x3c04, 0x28},
+         {0x3c05, 0x98},
+         {0x3c06, 0x00},
+         {0x3c07, 0x08},
+         {0x3c08, 0x00},
+         {0x3c09, 0x1c},
+         {0x300c, 0x22},
+         {0x3c0a, 0x9c},
+         {0x3c0b, 0x40},
+	},
+
+       {//60Hz
+          {0x3c00, 0x04},
+          {0x3c01, 0x80},
+          {0x3a0a, 0x01},
+          {0x3a0b, 0x98},
+          {0x3a0d, 0x03},
+       },
+       
+	{//50Hz
+         {0x3c00, 0x00},
+         {0x3c01, 0x80},
+         {0x3a08, 0x01},
+         {0x3a09, 0xec},
+         {0x3a0e, 0x02},
+	},
+
+	{ //auto
+         {0x3622, 0x01},
+         {0x3635, 0x13},
+         {0x3634, 0x40},
+         {0x3c01, 0xb4},
+         {0x3c00, 0x04},
+         {0x3c04, 0x28},
+         {0x3c05, 0x98},
+         {0x3c06, 0x00},
+         {0x3c07, 0x08},
+         {0x3c08, 0x00},
+         {0x3c09, 0x1c},
+         {0x300c, 0x22},
+         {0x3c0a, 0x9c},
+         {0x3c0b, 0x40},
+	}, 
+};
+
+static struct msm_camera_i2c_conf_array ov5640_antibanding_confs[][1] = {
+	{
+		{ov5640_antibanding[0],
+		ARRAY_SIZE(ov5640_antibanding[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_antibanding[1],
+		ARRAY_SIZE(ov5640_antibanding[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_antibanding[2],
+		ARRAY_SIZE(ov5640_antibanding[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_antibanding[3],
+		ARRAY_SIZE(ov5640_antibanding[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+};
+
+static int ov5640_antibanding_enum_map[] = {	
+	MSM_V4L2_POWER_LINE_OFF,  //not used
+	MSM_V4L2_POWER_LINE_60HZ,
+	MSM_V4L2_POWER_LINE_50HZ,
+	MSM_V4L2_POWER_LINE_AUTO,
+
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_antibanding_enum_confs = {
+	.conf = &ov5640_antibanding_confs[0][0],
+	.conf_enum = ov5640_antibanding_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_antibanding_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_antibanding_confs),
+	.num_conf = ARRAY_SIZE(ov5640_antibanding_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+
+//scene
+static struct msm_camera_i2c_reg_conf ov5640_scene[][58]={
+      {//SCENE_MODE_AUTO  自动
+        {0x3a00 ,0x00}, //04        //Night mode disable
+        {0x3a02 ,0x0f},  //Night mode(Half) 1/4
+        {0x3a03 ,0x60},
+        {0x3a14 ,0x0f},
+        {0x3a15 ,0x60},
+        {0x5381 ,0x1e},//CMX
+        {0x5382 ,0x5b},
+        {0x5383 ,0x08},
+        {0x5384 ,0x0a},
+        {0x5385 ,0x7e},
+        {0x5386 ,0x88},
+        {0x5387 ,0x7c},
+        {0x5388 ,0x6c},
+        {0x5389 ,0x10},
+        {0x538a ,0x01},
+        {0x538b ,0x98},
+        {0x3a0f ,0x30},//EV default
+        {0x3a10 ,0x28},
+        {0x3a1b ,0x30},
+        {0x3a1e ,0x26},
+        {0x3a11 ,0x60},
+        {0x3a1f ,0x14},
+        {0x5490 ,0x1d},//Gamma
+        {0x5481 ,0x08},
+        {0x5482 ,0x14},
+        {0x5483 ,0x28},
+        {0x5484 ,0x51},
+        {0x5485 ,0x65},
+        {0x5486 ,0x71},
+        {0x5487 ,0x7d},
+        {0x5488 ,0x87},
+        {0x5489 ,0x91},
+        {0x548a ,0x9a},
+        {0x548b ,0xaa},
+        {0x548c ,0xb8},
+        {0x548d ,0xcd},
+        {0x548e ,0xdd},
+        {0x548f ,0xea},
+        {0x5308 ,0x00}, //40        //Sharpness Auto default
+        {0x5300 ,0x08},
+        {0x5301 ,0x30},
+        {0x5302 ,0x10},
+        {0x5303 ,0x00},
+        {0x5309 ,0x08},
+        {0x530a ,0x30},
+        {0x530b ,0x04},
+        {0x530c ,0x06},
+        {0x3a18 ,0x00},        //ISO Auto - 16x
+        {0x3a19 ,0xf8},   //0xfc  yuxin modify 0628
+        {0x501d ,0x00},//AE Weight - Average
+        {0x5688 ,0x11},
+        {0x5689 ,0x11}, 
+        {0x568a ,0x11}, 
+        {0x568b ,0x11}, 
+        {0x568c ,0x11},
+        {0x568d ,0x11}, 
+        {0x568e ,0x11}, 
+        {0x568f ,0x11},
+	},
+	
+      {   //SCENE_MODE_LANDSCAPE，风景
+         {0x3a00 ,0x00}, //04         //Night mode disable
+         {0x3a02 ,0x0f},//Night mode(Half) 1/4
+         {0x3a03 ,0x60},
+         {0x3a14 ,0x0f},
+         {0x3a15 ,0x60},        
+         {0x5381 ,0x1c}, //CMX
+         {0x5382 ,0x5a},
+         {0x5383 ,0x06},
+         {0x5384 ,0x0d},
+         {0x5385 ,0xa4},
+         {0x5386 ,0xb1},
+         {0x5387 ,0xa1},
+         {0x5388 ,0x8c},
+         {0x5389 ,0x15},
+         {0x538a ,0x01},
+         {0x538b ,0x98},
+         {0x3a0f ,0x30},//EV default
+         {0x3a10 ,0x28},
+         {0x3a1b ,0x30},
+         {0x3a1e ,0x26},
+         {0x3a11 ,0x60},
+         {0x3a1f ,0x14},
+         {0x5490 ,0x24},         //Gamma
+         {0x5481 ,0x04},
+         {0x5482 ,0x07},
+         {0x5483 ,0x10},
+         {0x5484 ,0x28},
+         {0x5485 ,0x36},
+         {0x5486 ,0x44},
+         {0x5487 ,0x52},
+         {0x5488 ,0x60},
+         {0x5489 ,0x6c},
+         {0x548a ,0x78},
+         {0x548b ,0x8c},
+         {0x548c ,0x9e},
+         {0x548d ,0xbb},
+         {0x548e ,0xd2},
+         {0x548f ,0xe5},
+         {0x5308 ,0x00}, //40 //Sharpness Auto default
+         {0x5300 ,0x08},
+         {0x5301 ,0x30},
+         {0x5302 ,0x10},
+         {0x5303 ,0x00},
+         {0x5309 ,0x08},
+         {0x530a ,0x30},
+         {0x530b ,0x04},
+         {0x530c ,0x06},
+         {0x3a18 ,0x00},//ISO Auto - 16x
+         {0x3a19 ,0xfc},
+         {0x501d ,0x00},//AE Weight - Average
+         {0x5688 ,0x62},
+         {0x5689 ,0x26}, 
+         {0x568a ,0xe6}, 
+         {0x568b ,0x6e}, 
+         {0x568c ,0xea},
+         {0x568d ,0xae}, 
+         {0x568e ,0xa6}, 
+         {0x568f ,0x6a}, 
+
+      },
+      {//SCENE_MODE_FIREWORKS 篝火
+          {0x3a00 ,0x00}, //04//Night mode disable
+          {0x3a02 ,0x0f},          //Night mode(Half) 1/4
+          {0x3a03 ,0x60},
+          {0x3a14 ,0x0f},
+          {0x3a15 ,0x60},          
+          {0x5381 ,0x1e},          //CMX
+          {0x5382 ,0x5b},
+          {0x5383 ,0x08},
+          {0x5384 ,0x0a},
+          {0x5385 ,0x7e},
+          {0x5386 ,0x88},
+          {0x5387 ,0x7c},
+          {0x5388 ,0x6c},
+          {0x5389 ,0x10},
+          {0x538a ,0x01},
+          {0x538b ,0x98},
+          {0x3a0f ,0x10}, //EV default
+          {0x3a10 ,0x08}, 
+          {0x3a1b ,0x10}, 
+          {0x3a1e ,0x08}, 
+          {0x3a11 ,0x20}, 
+          {0x3a1f ,0x10}, 
+          {0x5490 ,0x1d}, //Gamma
+          {0x5481 ,0x08},
+          {0x5482 ,0x14},
+          {0x5483 ,0x28},
+          {0x5484 ,0x51},
+          {0x5485 ,0x65},
+          {0x5486 ,0x71},
+          {0x5487 ,0x7d},
+          {0x5488 ,0x87},
+          {0x5489 ,0x91},
+          {0x548a ,0x9a},
+          {0x548b ,0xaa},
+          {0x548c ,0xb8},
+          {0x548d ,0xcd},
+          {0x548e ,0xdd},
+          {0x548f ,0xea},  
+          {0x5308 ,0x00}, //40//Sharpness Auto default
+          {0x5300 ,0x08},
+          {0x5301 ,0x30},
+          {0x5302 ,0x10},
+          {0x5303 ,0x00},
+          {0x5309 ,0x08},
+          {0x530a ,0x30},
+          {0x530b ,0x04},
+          {0x530c ,0x06},          
+          {0x3a18 ,0x00},//ISO Auto - 16x
+          {0x3a19 ,0xfc},          
+          {0x501d ,0x00},//AE Weight - Average
+          {0x5688 ,0x11},
+          {0x5689 ,0x11}, 
+          {0x568a ,0x11}, 
+          {0x568b ,0x11}, 
+          {0x568c ,0x11},
+          {0x568d ,0x11}, 
+          {0x568e ,0x11}, 
+          {0x568f ,0x11}, 
+      	},
+       {//SCENE_MODE_BEACH   海滩
+         {0x3a00 ,0x00}, //04 //Night mode disable
+         {0x3a02 ,0x0f},         //Night mode(Half) 1/4
+         {0x3a03 ,0x60},
+         {0x3a14 ,0x0f},
+         {0x3a15 ,0x60},
+         {0x5381 ,0x0b},//CMX
+         {0x5382 ,0x5f},
+         {0x5383 ,0x18},
+         {0x5384 ,0x14},
+         {0x5385 ,0x95},
+         {0x5386 ,0xab},
+         {0x5387 ,0x65},
+         {0x5388 ,0x5c},
+         {0x5389 ,0x09},
+         {0x538a ,0x01},
+         {0x538b ,0x98},
+         {0x3a0f ,0x30},         //EV default
+         {0x3a10 ,0x28},
+         {0x3a1b ,0x30},
+         {0x3a1e ,0x26},
+         {0x3a11 ,0x60},
+         {0x3a1f ,0x14},
+         {0x5490 ,0x1d},         //Gamma
+         {0x5481 ,0x08},
+         {0x5482 ,0x14},
+         {0x5483 ,0x28},
+         {0x5484 ,0x51},
+         {0x5485 ,0x65},
+         {0x5486 ,0x71},
+         {0x5487 ,0x7d},
+         {0x5488 ,0x87},
+         {0x5489 ,0x91},
+         {0x548a ,0x9a},
+         {0x548b ,0xaa},
+         {0x548c ,0xb8},
+         {0x548d ,0xcd},
+         {0x548e ,0xdd},
+         {0x548f ,0xea},
+         {0x5308 ,0x00}, //40 //Sharpness Auto default
+         {0x5300 ,0x08},
+         {0x5301 ,0x30},
+         {0x5302 ,0x10},
+         {0x5303 ,0x00},
+         {0x5309 ,0x08},
+         {0x530a ,0x30},
+         {0x530b ,0x04},
+         {0x530c ,0x06},      
+         {0x3a18 ,0x00},  //ISO 100
+         {0x3a19 ,0x6c},
+         {0x501d ,0x00},//AE Weight - Average
+         {0x5688 ,0x11},
+         {0x5689 ,0x11}, 
+         {0x568a ,0x11}, 
+         {0x568b ,0x11}, 
+         {0x568c ,0x11},
+         {0x568d ,0x11}, 
+         {0x568e ,0x11}, 
+         {0x568f ,0x11},
+       },
+
+       {//SCENE_MODE_PARTY - Take indoor low-light shot.派对
+           {0x3a00 ,0x04}, //04//Night mode enable
+           {0x3a02 ,0x0f},//Night mode(Half) 1/4
+           {0x3a03 ,0x60},
+           {0x3a14 ,0x0f},
+           {0x3a15 ,0x60},
+           {0x5381 ,0x1e},    //CMX
+           {0x5382 ,0x5b},
+           {0x5383 ,0x08},
+           {0x5384 ,0x0a},
+           {0x5385 ,0x7e},
+           {0x5386 ,0x88},
+           {0x5387 ,0x7c},
+           {0x5388 ,0x6c},
+           {0x5389 ,0x10},
+           {0x538a ,0x01},
+           {0x538b ,0x98}, 
+           {0x3a0f ,0x30},//EV default
+           {0x3a10 ,0x28},
+           {0x3a1b ,0x30},
+           {0x3a1e ,0x26},
+           {0x3a11 ,0x60},
+           {0x3a1f ,0x14},
+           {0x5490 ,0x20},//Gamma
+           {0x5481 ,0x08},
+           {0x5482 ,0x16},
+           {0x5483 ,0x2c},
+           {0x5484 ,0x48},
+           {0x5485 ,0x55},
+           {0x5486 ,0x6a},
+           {0x5487 ,0x76},
+           {0x5488 ,0x80},
+           {0x5489 ,0x8c},
+           {0x548a ,0x96},
+           {0x548b ,0xa3},
+           {0x548c ,0xaf},
+           {0x548d ,0xc4},
+           {0x548e ,0xd7},
+           {0x548f ,0xe8}, 
+           {0x5308 ,0x00}, //40//Sharpness Auto default
+           {0x5300 ,0x08},
+           {0x5301 ,0x30},
+           {0x5302 ,0x10},
+           {0x5303 ,0x00},
+           {0x5309 ,0x08},
+           {0x530a ,0x30},
+           {0x530b ,0x04},
+           {0x530c ,0x06},
+           {0x3a18 ,0x00},//ISO Auto - 16x
+           {0x3a19 ,0xfc},
+           {0x501d ,0x00},//AE Weight - Average
+           {0x5688 ,0x11},
+           {0x5689 ,0x11}, 
+           {0x568a ,0x11}, 
+           {0x568b ,0x11}, 
+           {0x568c ,0x11},
+           {0x568d ,0x11}, 
+           {0x568e ,0x11}, 
+           {0x568f ,0x11}, 
+       },
+
+       {//SCENE_MODE_PORTRAIT - Take people pictures.人物
+          {0x3a00 ,0x00},// 04//Night mode disable
+          {0x3a02 ,0x0f},//Night mode(Half) 1/4
+          {0x3a03 ,0x60},
+          {0x3a14 ,0x0f},
+          {0x3a15 ,0x60}, 
+          {0x5381 ,0x1c},//CMX
+          {0x5382 ,0x5a},
+          {0x5383 ,0x06},
+          {0x5384 ,0x08},
+          {0x5385 ,0x65},
+          {0x5386 ,0x6d},
+          {0x5387 ,0x63},
+          {0x5388 ,0x56},
+          {0x5389 ,0x0d},
+          {0x538a ,0x01},
+          {0x538b ,0x98},
+          {0x3a0f ,0x30},//EV default
+          {0x3a10 ,0x28},
+          {0x3a1b ,0x30},
+          {0x3a1e ,0x26},
+          {0x3a11 ,0x60},
+          {0x3a1f ,0x14},
+          {0x5490 ,0x1d},//Gamma
+          {0x5481 ,0x08},
+          {0x5482 ,0x14},
+          {0x5483 ,0x28},
+          {0x5484 ,0x51},
+          {0x5485 ,0x65},
+          {0x5486 ,0x71},
+          {0x5487 ,0x7d},
+          {0x5488 ,0x87},
+          {0x5489 ,0x91},
+          {0x548a ,0x9a},
+          {0x548b ,0xaa},
+          {0x548c ,0xb8},
+          {0x548d ,0xcd},
+          {0x548e ,0xdd},
+          {0x548f ,0xea},
+          {0x5308 ,0x40}, //40//Sharpness manual 0
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x5302 ,0x00},
+          {0x3a18 ,0x00}, //ISO Auto - 16x
+          {0x3a19 ,0xfc}, 
+          {0x501d ,0x00},//AE Weight - CenterAverage
+          {0x5688 ,0x00},
+          {0x5689 ,0x00}, 
+          {0x568a ,0x10}, 
+          {0x568b ,0x01}, 
+          {0x568c ,0x10},
+          {0x568d ,0x01}, 
+          {0x568e ,0x00}, 
+          {0x568f ,0x00}, 
+       },
+       
+       {//SCENE_MODE_SUNSET 日落
+          {0x3a00 ,0x00}, //04 //Night mode disable
+          {0x3a02 ,0x0f},          //Night mode(Half) 1/4
+          {0x3a03 ,0x60},
+          {0x3a14 ,0x0f},
+          {0x3a15 ,0x60},
+          {0x5381 ,0x42},//CMX
+          {0x5382 ,0x5a},
+          {0x5383 ,0x08},
+          {0x5384 ,0x20},
+          {0x5385 ,0x7e},
+          {0x5386 ,0x48},
+          {0x5387 ,0xbc},
+          {0x5388 ,0x6c},
+          {0x5389 ,0x06},
+          {0x538a ,0x01},
+          {0x538b ,0x9c},
+          {0x3a0f ,0x20},//EV default
+          {0x3a10 ,0x18}, 
+          {0x3a1b ,0x20}, 
+          {0x3a1e ,0x18}, 
+          {0x3a11 ,0x41},
+          {0x3a1f ,0x10},
+          {0x5490 ,0x1d},//Gamma
+          {0x5481 ,0x08},
+          {0x5482 ,0x14},
+          {0x5483 ,0x28},
+          {0x5484 ,0x51},
+          {0x5485 ,0x65},
+          {0x5486 ,0x71},
+          {0x5487 ,0x7d},
+          {0x5488 ,0x87},
+          {0x5489 ,0x91},
+          {0x548a ,0x9a},
+          {0x548b ,0xaa},
+          {0x548c ,0xb8},
+          {0x548d ,0xcd},
+          {0x548e ,0xdd},
+          {0x548f ,0xea},
+          {0x5308 ,0x00}, //40//Sharpness Auto default
+          {0x5300 ,0x08},
+          {0x5301 ,0x30},
+          {0x5302 ,0x10},
+          {0x5303 ,0x00},
+          {0x5309 ,0x08},
+          {0x530a ,0x30},
+          {0x530b ,0x04},
+          {0x530c ,0x06},
+          {0x3a18 ,0x00},//ISO Auto - 16x
+          {0x3a19 ,0xfc},
+          {0x501d ,0x00},//AE Weight - Average
+          {0x5688 ,0x11},
+          {0x5689 ,0x11}, 
+          {0x568a ,0x11}, 
+          {0x568b ,0x11}, 
+          {0x568c ,0x11},
+          {0x568d ,0x11}, 
+          {0x568e ,0x11}, 
+          {0x568f ,0x11}, 
+       },
+
+      { //SCENE_MODE_SNOW - Take pictures on the snow. 下雪
+         {0x3a00 ,0x00}, //04   //Night mode disable
+         {0x3a02 ,0x0f},         //Night mode(Half) 1/4
+         {0x3a03 ,0x60},
+         {0x3a14 ,0x0f},
+         {0x3a15 ,0x60},
+         {0x5381 ,0x1e}, //CMX
+         {0x5382 ,0x5b},
+         {0x5383 ,0x08},
+         {0x5384 ,0x0a},
+         {0x5385 ,0x7e},
+         {0x5386 ,0x88},
+         {0x5387 ,0x7c},
+         {0x5388 ,0x6c},
+         {0x5389 ,0x10},
+         {0x538a ,0x01},
+         {0x538b ,0x98},
+         {0x3a0f ,0x50}, //EV default
+         {0x3a10 ,0x48}, 
+         {0x3a11 ,0x90}, 
+         {0x3a1b ,0x50}, 
+         {0x3a1e ,0x48}, 
+         {0x3a1f ,0x20}, 
+         {0x5490 ,0x1d},  //Gamma
+         {0x5481 ,0x08},
+         {0x5482 ,0x14},
+         {0x5483 ,0x28},
+         {0x5484 ,0x51},
+         {0x5485 ,0x65},
+         {0x5486 ,0x71},
+         {0x5487 ,0x7d},
+         {0x5488 ,0x87},
+         {0x5489 ,0x91},
+         {0x548a ,0x9a},
+         {0x548b ,0xaa},
+         {0x548c ,0xb8},
+         {0x548d ,0xcd},
+         {0x548e ,0xdd},
+         {0x548f ,0xea},
+         {0x5308 ,0x00}, //40 //Sharpness Auto default
+         {0x5300 ,0x08},
+         {0x5301 ,0x30},
+         {0x5302 ,0x10},
+         {0x5303 ,0x00},
+         {0x5309 ,0x08},
+         {0x530a ,0x30},
+         {0x530b ,0x04},
+         {0x530c ,0x06},
+         {0x3a18 ,0x00}, //ISO 100
+         {0x3a19 ,0x6c},
+         {0x501d ,0x00},//AE Weight - Average
+         {0x5688 ,0x11},
+         {0x5689 ,0x11}, 
+         {0x568a ,0x11}, 
+         {0x568b ,0x11}, 
+         {0x568c ,0x11},
+         {0x568d ,0x11}, 
+         {0x568e ,0x11}, 
+         {0x568f ,0x11}, 
+      },
+
+		 
+      {//SCENE_MODE_NIGHT    夜景
+          {0x3a00 ,0x04}, //04 //Night mode enable
+          {0x3a02 ,0x0f}, //Night mode(Half) 1/4
+          {0x3a03 ,0x60},
+          {0x3a14 ,0x0f},
+          {0x3a15 ,0x60},
+          {0x5381 ,0x1e},//CMX
+          {0x5382 ,0x5b},
+          {0x5383 ,0x08},
+          {0x5384 ,0x0a},
+          {0x5385 ,0x7e},
+          {0x5386 ,0x88},
+          {0x5387 ,0x7c},
+          {0x5388 ,0x6c},
+          {0x5389 ,0x10},
+          {0x538a ,0x01},
+          {0x538b ,0x98},
+          {0x3a0f ,0x30},//EV default
+          {0x3a10 ,0x28},
+          {0x3a1b ,0x30},
+          {0x3a1e ,0x26},
+          {0x3a11 ,0x60},
+          {0x3a1f ,0x14},
+          {0x5490 ,0x20},//Gamma - low light gamma
+          {0x5481 ,0x1b},
+          {0x5482 ,0x26},
+          {0x5483 ,0x3c},
+          {0x5484 ,0x5a},
+          {0x5485 ,0x68},
+          {0x5486 ,0x76},
+          {0x5487 ,0x80},
+          {0x5488 ,0x88},
+          {0x5489 ,0x8f},
+          {0x548a ,0x96},
+          {0x548b ,0xa3},
+          {0x548c ,0xaf},
+          {0x548d ,0xc4},
+          {0x548e ,0xd7},
+          {0x548f ,0xe8},
+          {0x5308 ,0x00}, //40//Sharpness Auto default
+          {0x5300 ,0x08},
+          {0x5301 ,0x30},
+          {0x5302 ,0x10},
+          {0x5303 ,0x00},
+          {0x5309 ,0x08},
+          {0x530a ,0x30},
+          {0x530b ,0x04},
+          {0x530c ,0x06},
+          {0x3a18 ,0x00},//ISO Auto - 16x
+          {0x3a19 ,0xfc}, 
+          {0x501d ,0x00},//AE Weight - Average
+          {0x5688 ,0x11},
+          {0x5689 ,0x11}, 
+          {0x568a ,0x11}, 
+          {0x568b ,0x11}, 
+          {0x568c ,0x11},
+          {0x568d ,0x11}, 
+          {0x568e ,0x11}, 
+          {0x568f ,0x11}, 
+
+      	},
+
+      { //SCENE_MODE_SPORTS  运动
+           {0x3a00 ,0x00}, //04//Night mode disable
+           {0x3a02 ,0x0f},//Night mode(Half) 1/4
+           {0x3a03 ,0x60},
+           {0x3a14 ,0x0f},
+           {0x3a15 ,0x60},
+           {0x5381 ,0x1e},//CMX
+           {0x5382 ,0x5b},
+           {0x5383 ,0x08},
+           {0x5384 ,0x0a},
+           {0x5385 ,0x7e},
+           {0x5386 ,0x88},
+           {0x5387 ,0x7c},
+           {0x5388 ,0x6c},
+           {0x5389 ,0x10},
+           {0x538a ,0x01},
+           {0x538b ,0x98},
+           {0x3a0f ,0x30},//EV default
+           {0x3a10 ,0x28},
+           {0x3a1b ,0x30},
+           {0x3a1e ,0x26},
+           {0x3a11 ,0x60},
+           {0x3a1f ,0x14},
+           {0x5490 ,0x1d},//Gamma
+           {0x5481 ,0x08},
+           {0x5482 ,0x14},
+           {0x5483 ,0x28},
+           {0x5484 ,0x51},
+           {0x5485 ,0x65},
+           {0x5486 ,0x71},
+           {0x5487 ,0x7d},
+           {0x5488 ,0x87},
+           {0x5489 ,0x91},
+           {0x548a ,0x9a},
+           {0x548b ,0xaa},
+           {0x548c ,0xb8},
+           {0x548d ,0xcd},
+           {0x548e ,0xdd},
+           {0x548f ,0xea},
+           {0x5308 ,0x00}, //40   //Sharpness Auto default
+           {0x5300 ,0x08},
+           {0x5301 ,0x30},
+           {0x5302 ,0x10},
+           {0x5303 ,0x00},
+           {0x5309 ,0x08},
+           {0x530a ,0x30},
+           {0x530b ,0x04},
+           {0x530c ,0x06},
+           {0x3a18 ,0x01},//ISO Auto - 32x
+           {0x3a19 ,0xfc},
+           {0x501d ,0x00}, //AE Weight - Average
+           {0x5688 ,0x11},
+           {0x5689 ,0x11}, 
+           {0x568a ,0x11}, 
+           {0x568b ,0x11}, 
+           {0x568c ,0x11},
+           {0x568d ,0x11}, 
+           {0x568e ,0x11}, 
+           {0x568f ,0x11},
+
+	},
+
+       {//SCENE_MODE_CANDLELIGHT 烛光
+         {0x3a00 ,0x00}, //04  //Night mode disable
+         {0x3a02 ,0x0f},         //Night mode(Half) 1/4
+         {0x3a03 ,0x60},
+         {0x3a14 ,0x0f},
+         {0x3a15 ,0x60},
+         {0x5381 ,0x42},//CMX
+         {0x5382 ,0x5a},
+         {0x5383 ,0x08},
+         {0x5384 ,0x20},
+         {0x5385 ,0x7e},
+         {0x5386 ,0x48},
+         {0x5387 ,0xe0},
+         {0x5388 ,0x6c},
+         {0x5389 ,0x06},
+         {0x538a ,0x01},
+         {0x538b ,0x9c},
+         {0x3a0f ,0x30},//EV default
+         {0x3a10 ,0x28},
+         {0x3a1b ,0x30},
+         {0x3a1e ,0x26},
+         {0x3a11 ,0x60},
+         {0x3a1f ,0x14},
+         {0x5490 ,0x1d},//Gamma
+         {0x5481 ,0x08},
+         {0x5482 ,0x14},
+         {0x5483 ,0x28},
+         {0x5484 ,0x51},
+         {0x5485 ,0x65},
+         {0x5486 ,0x71},
+         {0x5487 ,0x7d},
+         {0x5488 ,0x87},
+         {0x5489 ,0x91},
+         {0x548a ,0x9a},
+         {0x548b ,0xaa},
+         {0x548c ,0xb8},
+         {0x548d ,0xcd},
+         {0x548e ,0xdd},
+         {0x548f ,0xea},
+         {0x5308 ,0x00}, //40  //Sharpness Auto default
+         {0x5300 ,0x08},
+         {0x5301 ,0x30},
+         {0x5302 ,0x10},
+         {0x5303 ,0x00},
+         {0x5309 ,0x08},
+         {0x530a ,0x30},
+         {0x530b ,0x04},
+         {0x530c ,0x06},
+         {0x3a18 ,0x00},  //ISO Auto - 16x
+         {0x3a19 ,0xfc},
+         {0x501d ,0x00},//AE Weight - Average
+         {0x5688 ,0x11},
+         {0x5689 ,0x11}, 
+         {0x568a ,0x11}, 
+         {0x568b ,0x11}, 
+         {0x568c ,0x11},
+         {0x568d ,0x11}, 
+         {0x568e ,0x11}, 
+         {0x568f ,0x11}, 
+         
+       },
+        
+};
+
+static struct msm_camera_i2c_conf_array ov5640_scene_confs[][1] = {
+	{
+		{ov5640_scene[0],
+		ARRAY_SIZE(ov5640_scene[0]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[1],
+		ARRAY_SIZE(ov5640_scene[1]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[2],
+		ARRAY_SIZE(ov5640_scene[2]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	{
+		{ov5640_scene[3],
+		ARRAY_SIZE(ov5640_scene[3]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[4],
+		ARRAY_SIZE(ov5640_scene[4]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[5],
+		ARRAY_SIZE(ov5640_scene[5]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	{
+		{ov5640_scene[6],
+		ARRAY_SIZE(ov5640_scene[6]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[7],
+		ARRAY_SIZE(ov5640_scene[7]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	{
+		{ov5640_scene[8],
+		ARRAY_SIZE(ov5640_scene[8]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[9],
+		ARRAY_SIZE(ov5640_scene[9]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+	
+	{
+		{ov5640_scene[10],
+		ARRAY_SIZE(ov5640_scene[10]), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	},
+};
+
+static int ov5640_scene_enum_map[] = {	
+	MSM_V4L2_SCENE_AUTO,
+	MSM_V4L2_SCENE_LANDSCAPE,
+	MSM_V4L2_SCENE_FIREWORK,
+	MSM_V4L2_SCENE_BEACH,
+	MSM_V4L2_SCENE_PARTY,
+	MSM_V4L2_SCENE_PORTRAIT,
+	MSM_V4L2_SCENE_SUNSET,
+	MSM_V4L2_SCENE_SNOW,
+	MSM_V4L2_SCENE_NIGHT,
+	MSM_V4L2_SCENE_SPORTS,
+	MSM_V4L2_SCENE_CANDLELIGHT,
+
+};
+
+static struct msm_camera_i2c_enum_conf_array ov5640_scene_enum_confs = {
+	.conf = &ov5640_scene_confs[0][0],
+	.conf_enum = ov5640_scene_enum_map,
+	.num_enum = ARRAY_SIZE(ov5640_scene_enum_map),
+	.num_index = ARRAY_SIZE(ov5640_scene_confs),
+	.num_conf = ARRAY_SIZE(ov5640_scene_confs[0]),
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+};
+//
+//cmd=0x03:single focus  ,cmd=0x08:cancel focus
+int ov5640_set_af_result(struct msm_sensor_ctrl_t *s_ctrl, uint16_t cmd)
+{
+   int rc = 0;	 
+//	 uint16_t	 ack;	
+//	 int count = 30;    
+
+       CDBG("%s: cmd is 0x%x\n",__func__,cmd);
+	 rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x01, 1);
+	 if (rc<0)
+	 {
+	     printk("%s:AF reg I2C write 0x3023 error!-------",__func__);
+	     return rc;
+	 }
+	 
+	 rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, cmd, 1);
+	 if (rc<0)
+	 {
+	     printk("%s:AF reg I2C write 0x3022 error!-------",__func__);
+	     return rc;
+	 } 
+	 
+/*
+	 while(count) 
+	 {  
+	    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &ack, 1);
+	 	  if (rc<0)
+	 	  {
+	 	     printk("%s:msm_camera_i2c_read 0x3023 reg error!\n", __func__); 	      
+	 	      return rc;
+	 	  } 
+	 	  	 	  
+	 	  if (ack == 0x0)
+	 	  {
+	 	      printk("%s:i2c_read:ack = 0x%x\n", __func__,ack);
+	 	      break;
+	 	  }
+	 	  count--;	 	    
+	 	  msleep(50);
+	 	  
+	 }	
+	 if (!count)
+	 {
+	 	  printk("%s:failed!!\n",__func__);
+		  return -1;
+	 }
+	 */
+	 CDBG("%s:success!\n", __func__);
+	 return 0;	 
+}
+EXPORT_SYMBOL(ov5640_set_af_result);
+//
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+#define BURST_LENGTH  128 //256  //ECID:0000 zhangzhao optimize f/w download function
+static int32_t ov5640_download_af_firmware(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int32_t rc = 0;
+//ECID:0000 zhangzhao optimize f/w download function	
+	int32_t i, j;
+	int32_t array_length;
+	uint16_t length;
+	uint8_t buffer[BURST_LENGTH];
+//ECID:0000 zhangzhao optimize f/w download function	
+	//struct msm_camera_sensor_info *info = NULL;
+	CDBG("++++++%s: %d\n", __func__, __LINE__);
+
+
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3000, 0x20, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+        }
+//ECID:0000 zhangzhao optimize f/w download function
+	array_length = sizeof(ov5640_af_settings_start) /sizeof(ov5640_af_settings_start[0]);	
+	for(i = 0; i < (array_length/BURST_LENGTH + 1); i++){
+		if(ov5640_af_settings_start[i*BURST_LENGTH].reg_addr != 0x8f80 /*0x8e00*/){//zhangzhao 2012-9-18 for touch focus
+			length = BURST_LENGTH;
+		}else{
+			length = array_length % BURST_LENGTH;
+		}
+		for(j = 0; j < length; j++){
+			buffer[j] = ov5640_af_settings_start[i*BURST_LENGTH + j].reg_data;
+		}
+		
+             rc = msm_camera_i2c_write_seq(s_ctrl->sensor_i2c_client,
+      			ov5640_af_settings_start[i*BURST_LENGTH].reg_addr,buffer, length);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640  AF FW WRITE SEQ FAIL: msm_camera_i2c_write FAILS!\n");
+        }
+	}
+//ECID:0000 zhangzhao optimize f/w download function
+
+	rc = msm_sensor_write_all_conf_array(
+		s_ctrl->sensor_i2c_client,
+		s_ctrl->msm_sensor_reg->fw_download,
+		s_ctrl->msm_sensor_reg->fw_size);
+
+	 if (rc < 0)
+        {
+	      pr_err("----ov5640 AF END ARRAY WRITE FAIL  : msm_camera_i2c_write FAILS!\n");
+        }
+
+	CDBG("-------%s: %d\n", __func__, __LINE__);
+		return rc;
+}
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time end
+int ov5640_AF_proc(struct msm_sensor_ctrl_t *s_ctrl,
+		                          struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
+{
+	 int rc = 0;
+	// int count  = 0;
+	// uint16_t ack=0;	 
+
+     af_count = 0;
+	 // trig af
+	 rc = ov5640_set_af_result(s_ctrl, 0x03);
+	 if (rc!=0)
+	 {
+	     printk("trig af error!-------\n");
+		 return rc;
+	 }
+	 /*
+	 while((ack != 0x00) &&(count < 100) ){
+
+	     rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3029, &ack, 1);
+	 if (rc<0)
+	 {
+	     printk("I2C write error!-------");
+	     return rc;
+	 }
+	count ++;
+	msleep(10);
+	if (count>=100)  
+			return -EINVAL;
+      } */
+	 return 0;
+}
+
+// zte-modify, 20120710 fuyipeng modify for panorama mode +++
+static struct msm_camera_i2c_reg_conf ov5640_panorama_17fps[] = {	
+
+          {0x3034, 0x18},
+          {0x3035, 0x31},
+          {0x3036, 0x5d},
+          {0x3037, 0x13},
+          {0x3108, 0x01},
+	   {0x3824, 0x04},
+	   {0x460c, 0x20},
+          {0x4837, 0x19,},//--------------------
+	   {0x300e, 0x45}, //zhangzhao 45---25
+          {0x380c, 0x07},
+          {0x380d, 0x68},
+          {0x380e, 0x03},
+          {0x380f, 0xd8},		  	
+};
+
+struct msm_camera_i2c_conf_array ov5640_panorama_reg[] = {
+
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+
+	{&ov5640_panorama_17fps[0],
+	ARRAY_SIZE(ov5640_panorama_17fps), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	
+};
+
+int ov5640_panorama_mode(struct msm_sensor_ctrl_t *s_ctrl,
+                            struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
+{
+    int rc = 0;
+
+    CDBG("fuyipeng---%s enter  value is === %d\n", __func__,value);
+
+    if(value)  
+    	{
+	rc = msm_sensor_write_all_conf_array(
+		s_ctrl->sensor_i2c_client,
+		&ov5640_panorama_reg[0],
+		ARRAY_SIZE(ov5640_panorama_reg));
+	if (rc<0)
+	 {
+	     printk("I2C write error!-------");
+	     return rc;
+	 }
+
+	CDBG("---panorama 17fps----%s: %d\n", __func__, __LINE__);
+	return rc;
+
+    	}
+	CDBG("---not in panorama mode 25 fps----%s: %d\n", __func__, __LINE__);
+	
+	return rc;
+
+}
+// zte-modify, 20120710 fuyipeng modify for panorama mode ---
+
+//zhangzhao 2012-9-18 for touch focus start
+static int32_t ov5640_set_sensor_touch_point(struct msm_sensor_ctrl_t *s_ctrl,  int xPoint, int yPoint)
+{
+	int rc;
+	int16_t ack=11;
+	int count = 0;
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x1, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x8, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        do{
+               rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &ack, 1);
+	      CDBG("----the ack is ======%d\n",ack);
+               if (rc<0)
+               {
+                   printk("I2C write error!-------");
+			return rc;	   
+               }
+		count++;
+		msleep(5);		
+		}while((ack != 0)&&(count <10));
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3024, xPoint, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3025, yPoint ,MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3026, 16, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3027, 16 ,MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x1, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x81, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      pr_err("----ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		return rc;	  
+        }
+	count =0;	
+        do{
+               rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &ack, 1);
+	      CDBG("--222222--the ack is ======%d\n",ack);
+               if (rc<0)
+               {
+                   printk("I2C write error!-------");
+			return rc;	   
+               }
+		count++;	 
+		msleep(5);
+		}while((ack != 0)&&(count <10));
+	return 0;
+}
+//zhangzhao 2012-9-18 for touch focus end
+// zte-modify, 20120724 fuyipeng modify to cancel the focus +++
+int ov5640_ctrl_cancel_autofocus(struct msm_sensor_ctrl_t *s_ctrl,
+                            struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
+{
+	int rc;
+    af_count = 0;
+    rc= ov5640_set_sensor_touch_point(s_ctrl,40,30);//zhangzhao 2012-9-18 for touch focus
+    if(rc)
+	return rc;	
+
+    return ov5640_set_af_result(s_ctrl, 0x08);
+}
+// zte-modify, 20120724 fuyipeng modify to cancel the focus ---
+
+// zte-modify, 20120718 fuyipeng modify to optimize the autofocus +++
+int ov5640_get_autofocus_status(struct msm_sensor_ctrl_t *s_ctrl,
+                            struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
+{
+    int iFocusStatus = 0;
+    int rc;
+    uint16_t ack=11;
+
+    CDBG("fuyipeng---%s enter-----\n", __func__);
+
+
+    af_count++;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &ack, 1);
+    if (rc<0)
+    {
+        printk("I2C write error!-------");
+    }
+     
+    if (ack == 0)
+    {
+         iFocusStatus = 1;
+         af_count = 0;
+    }
+    else
+    {
+        if (af_count > 50)
+        {
+            iFocusStatus = 2;
+            af_count = 0;
+        }
+    }
+    return iFocusStatus;
+}
+// zte-modify, 20120718 fuyipeng modify to optimize the autofocus ---
+
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+int ov5640_set_effect(struct msm_sensor_ctrl_t *s_ctrl,
+		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
+{
+	int rc = 0;
+	CDBG("%s enter\n", __func__);
+	CDBG("%s:setting enum is %x,value =%d\n",__func__,ctrl_info->ctrl_id,value);
+	ov5640_effect_mode = value;
+	rc = msm_sensor_s_ctrl_by_enum(s_ctrl,ctrl_info, value);
+	return rc;
+}
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm end
+
+struct msm_sensor_v4l2_ctrl_info_t ov5640_v4l2_ctrl_info[] = {
+	{
+		.ctrl_id = V4L2_CID_SATURATION,
+		.min = MSM_V4L2_SATURATION_L0,
+		.max = MSM_V4L2_SATURATION_L4,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_saturation_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},
+	
+	{
+		.ctrl_id = V4L2_CID_CONTRAST,
+		.min = MSM_V4L2_CONTRAST_L0,
+		.max = MSM_V4L2_CONTRAST_L4,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_contrast_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},
+
+	{
+		.ctrl_id = V4L2_CID_SHARPNESS,
+		.min = MSM_V4L2_SHARPNESS_L0,
+		.max = MSM_V4L2_SHARPNESS_L4,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_sharpness_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},
+
+	{
+		.ctrl_id = V4L2_CID_BRIGHTNESS,
+		.min = MSM_V4L2_BRIGHTNESS_L0,
+		.max = MSM_V4L2_BRIGHTNESS_L4,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_brightness_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},
+	
+      { 
+		.ctrl_id = V4L2_CID_EXPOSURE,
+		.min = MSM_V4L2_EXPOSURE_N2,
+		.max = MSM_V4L2_EXPOSURE_P2,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_exposure_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},  
+	
+	{
+		.ctrl_id = V4L2_CID_COLORFX,
+		.min = MSM_V4L2_EFFECT_OFF,
+		.max = MSM_V4L2_EFFECT_POSTERAIZE,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_effect_enum_confs,
+		.s_v4l2_ctrl = ov5640_set_effect,//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+
+	},
+
+	{
+		.ctrl_id = V4L2_CID_AUTO_WHITE_BALANCE,
+		.min = MSM_V4L2_WB_AUTO,
+		.max = MSM_V4L2_WB_CLOUDY_DAYLIGHT,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_awb_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},	
+	
+	{
+		.ctrl_id = V4L2_CID_POWER_LINE_FREQUENCY,//antibanding
+		.min = MSM_V4L2_POWER_LINE_60HZ,
+		.max = MSM_V4L2_POWER_LINE_AUTO,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_antibanding_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},  
+
+       {
+		.ctrl_id = V4L2_CID_ISO,//antibanding
+		.min = MSM_V4L2_ISO_AUTO,
+		.max = MSM_V4L2_ISO_1600,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_iso_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},  
+
+	{
+		.ctrl_id = V4L2_CID_SCENE,
+		.min = MSM_V4L2_SCENE_AUTO,
+		.max = MSM_V4L2_SCENE_PORTRAIT,
+		.step = 1,
+		.enum_cfg_settings = &ov5640_scene_enum_confs,
+		.s_v4l2_ctrl = msm_sensor_s_ctrl_by_enum,
+	},
+	
+	{
+		.ctrl_id = V4L2_CID_FOCUS_AUTO,
+		//.min = MSM_V4L2_FOCUS_NORMAL,
+		//.max = MSM_V4L2_FOCUS_MAX,
+		//.step = 1,
+		//.enum_cfg_settings = &ov5640_awb_enum_confs,
+		.s_v4l2_ctrl = ov5640_AF_proc,
+	},		     	
+
+    // zte-modify, 20120710 fuyipeng modify for panorama mode +++
+    {
+        .ctrl_id = V4L2_CID_PANORAMA_MODE,
+
+        .s_v4l2_ctrl = ov5640_panorama_mode,
+    },
+    // zte-modify, 20120710 fuyipeng modify for panorama mode ---
+
+    // zte-modify, 20120718 fuyipeng modify to optimize the autofocus +++
+    {
+        .ctrl_id = V4L2_CID_GET_AUTOFOCUS_STATUS,
+
+        .s_v4l2_ctrl = ov5640_get_autofocus_status,
+    },
+    // zte-modify, 20120718 fuyipeng modify to optimize the autofocus ---
+
+    // zte-modify, 20120724 fuyipeng modify to cancel the focus +++
+    {
+        .ctrl_id = V4L2_CID_CANCEL_AUTOFOCUS,
+
+        .s_v4l2_ctrl = ov5640_ctrl_cancel_autofocus,
+    },
+    // zte-modify, 20120724 fuyipeng modify to cancel the focus ---
+    
+};
+/*ZTEBSP yuxin add for ov5640 effect settings,2012.05.16 --*/
 
 
 static struct v4l2_subdev_info ov5640_subdev_info[] = {
 	{
-		.code   = V4L2_MBUS_FMT_YUYV8_2X8,
-		.colorspace = V4L2_COLORSPACE_JPEG,
-		.fmt    = 1,
-		.order    = 0,
+	.code       = V4L2_MBUS_FMT_YUYV8_2X8,
+	.colorspace = V4L2_COLORSPACE_JPEG,
+	.fmt        = 1,
+	.order      = 0,
 	},
 	/* more can be supported, to be added later */
 };
 
-
 static struct msm_camera_i2c_conf_array ov5640_init_conf[] = {
-     {&ov5640_reset_settings[0],
-	ARRAY_SIZE(ov5640_reset_settings), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	{&ov5640_recommend_settings[0],
+	ARRAY_SIZE(ov5640_recommend_settings), 0, MSM_CAMERA_I2C_BYTE_DATA},
 };
 
-static struct msm_camera_i2c_conf_array  ov5640_confs[] = {
-	{& ov5640_snap_settings[0],
-	ARRAY_SIZE(ov5640_snap_settings), 0, MSM_CAMERA_I2C_BYTE_DATA},
-	{& ov5640_prev_settings[0],
-	ARRAY_SIZE(ov5640_prev_settings), 0, MSM_CAMERA_I2C_BYTE_DATA},
+static struct msm_camera_i2c_conf_array ov5640_confs[] = {	
+{&ov5640_snapshot_5m_array[0],
+	ARRAY_SIZE(ov5640_snapshot_5m_array), 0, MSM_CAMERA_I2C_BYTE_DATA},//////////////snapshot
+{&ov5640_capture_to_preview_settings_array[0],
+	ARRAY_SIZE(ov5640_capture_to_preview_settings_array), 0, MSM_CAMERA_I2C_BYTE_DATA},///////////////preview
 };
+
+/*ZTEBSP yuxin add for ov5640 af FW download,2012.05.21++*/
+struct msm_camera_i2c_conf_array af_firmware_download[] = {
+
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+
+	{&ov5640_af_settings_array_end[0],
+	ARRAY_SIZE(ov5640_af_settings_array_end), 0, MSM_CAMERA_I2C_BYTE_DATA},
+	
+};
+/*ZTEBSP yuxin add for ov5640 af FW download,2012.05.21--*/
+
 static struct msm_sensor_output_info_t ov5640_dimensions[] = {
-
 	{
-		.x_output = 0xA20,
-		.y_output = 0x798,
-		.line_length_pclk = 0xb1c,
-		.frame_length_lines = 0x7b0,
-		.vt_pixel_clk = 192000000,
-		.op_pixel_clk = 192000000,
+		//////////////////////////////snapshot
+		.x_output = 2592,
+		.y_output = 1944,
+		.line_length_pclk = 2592,
+		.frame_length_lines = 1944,
+		.vt_pixel_clk = 96000000,
+		.op_pixel_clk = 96000000,
 		.binning_factor = 1,
 	},
-      {
-		.x_output = 0x500,
-		.y_output = 0x3C0,
-		.line_length_pclk = 0x500,
-		.frame_length_lines = 0x3C0,
-		.vt_pixel_clk = 192000000,
-		.op_pixel_clk =192000000,
+	
+	{
+	//////////////////////////////preview
+		.x_output = 1280,
+		.y_output = 960,
+		.line_length_pclk = 1280,
+		.frame_length_lines = 960,
+		.vt_pixel_clk = 96000000,
+		.op_pixel_clk = 96000000,
 		.binning_factor = 1,
 	},
-
+	
 };
-#if 1
+
+
+/*static struct msm_camera_csid_vc_cfg ov5640_cid_cfg[] = {
+	{0, CSI_YUV422_8, CSI_DECODE_8BIT},   //0x1E
+	{1, CSI_EMBED_DATA, CSI_DECODE_8BIT},
+};*/
+
 static struct msm_camera_csi_params ov5640_csi_params = {
 	.data_format = CSI_8BIT,
 	.lane_cnt    = 2,
 	.lane_assign = 0xe4,
 	.dpcm_scheme = 0,
-	.settle_cnt  = 0x6,
+	.settle_cnt  = 0x10,
 };
 
 static struct msm_camera_csi_params *ov5640_csi_params_array[] = {
 	&ov5640_csi_params,
 	&ov5640_csi_params,
 };
-#endif
+
+
+static struct msm_sensor_output_reg_addr_t ov5640_reg_addr = {
+	.x_output = 0x3808,
+	.y_output = 0x380a,
+	.line_length_pclk = 0x380c,
+	.frame_length_lines = 0x380e,
+};
+
 static struct msm_sensor_id_info_t ov5640_id_info = {
 	.sensor_id_reg_addr = 0x300A,
-	.sensor_id = 0x5640,
+	.sensor_id = 0x56, //jidewei 2012-01-10  
 };
+
+
+static struct msm_sensor_exp_gain_info_t ov5640_exp_gain_info = {
+	.coarse_int_time_addr = 0x3501,
+	.global_gain_addr = 0x350a,
+	.vert_offset = 6,
+};
+
+
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+static int32_t ov5640_hw_ae_parameter_record(struct msm_sensor_ctrl_t *s_ctrl)
+{
+    uint16_t ret_l, ret_m, ret_h;
+    uint16_t temp_l, temp_m, temp_h;
+    uint32_t extra_line;
+    int32_t rc = 0;
+    uint16_t night;
+    uint16_t LencQ_H, LencQ_L;//zhangzhao	
+
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x3503, 0x07,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x3500, &ret_h,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;   
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x3501, &ret_m,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x3502, &ret_l,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x558c, &g_preview_uv,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;   
+
+    CDBG("ov5640_parameter_record:ret_h=%x,ret_m=%x,ret_l=%x\n",ret_h,ret_m,ret_l);
+
+    temp_l = ret_l & 0x00FF;
+    temp_m = ret_m & 0x00FF;
+    temp_h = ret_h & 0x00FF;
+    g_preview_exposure = (temp_h << 12) + (temp_m << 4) + (temp_l >> 4);
+
+    CDBG("ov5640_parameter_record:ret_l=%x\n",ret_l);
+    CDBG("ov5640_parameter_record:ret_m=%x\n",ret_m);
+    CDBG("ov5640_parameter_record:ret_h=%x\n",ret_h);
+   /****************neil add for night mode ************************/ 
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350c, &ret_h,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350d, &ret_l,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+	
+    extra_line = (ret_h <<8) + ret_l;
+
+    g_preview_exposure = g_preview_exposure + extra_line;
+   /******************************************************************/
+    /*
+      * Set as global metering mode
+      */
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x380e, &ret_h,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x380f, &ret_l,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+	
+    CDBG("ov5640_parameter_record:0x380e=%x  0x380f=%x\n",ret_h,ret_l);
+
+    g_preview_line_width = ret_h & 0xff;
+    g_preview_line_width = g_preview_line_width * 256 + ret_l;
+    
+    g_preview_line_width = g_preview_line_width + extra_line; // neil add for night mode
+    
+    //Read back AGC gain for preview
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350b, &g_preview_gain_low,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350a, &g_preview_gain_high,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+	
+    g_preview_gain_low = g_preview_gain_low & 0xff;
+    g_preview_gain = g_preview_gain_high * 256 + g_preview_gain_low;
+
+      LencQ_H=0;
+	   LencQ_L=0;
+	rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350a, &LencQ_H,MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x350b, &LencQ_L,MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;	   
+
+	//WriteSCCB(0x78, 0x5054, LencQ_H); 
+	//WriteSCCB(0x78, 0x5055, LencQ_L); 
+	//WriteSCCB(0x78, 0x504d, 0x02); // Manual mini Q	
+
+	rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5054, LencQ_H,MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;	
+	rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5055, LencQ_L,MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;	
+	rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x504d, 0x02,MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;	
+
+
+    YAVG = 0;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x56a1, &YAVG,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+       return rc;
+
+    if (0 == g_preview_frame_rate){
+        g_preview_frame_rate = PREVIEW_FRAMERATE;
+    }
+
+    /****************************disable night mode**********************/
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x3a00, &night,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    
+    night = night & 0xfb;
+    
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x3a00, night,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x350c, 0x00,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x350d, 0x00,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+   /***********************************************************/    
+    return 0;
+}
+static int preview_switch_to_snapshot = 0;//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+static int32_t ov5640_hw_ae_transfer(struct msm_sensor_ctrl_t *s_ctrl)
+{
+    long rc = 0;
+    uint16_t exposure_low;
+    uint16_t exposure_mid;
+    uint16_t exposure_high;
+    uint32_t capture_exposure;
+    uint32_t capture_gain;
+    uint16_t lines_10ms;
+    uint32_t m_60Hz = 0;
+    uint16_t reg_l,reg_h;
+    uint16_t preview_lines_max = g_preview_line_width;
+    uint16_t gain = g_preview_gain;
+    uint32_t capture_lines_max;
+  //  int array_length = 0;
+   // int i;
+//	int err;
+
+    CDBG("1ov5640_hw_ae_transfer:gain=%x\n",gain);
+	
+
+    
+   //change resolution from VGA to 5M here
+    /*
+      * Set as global metering mode
+      */
+
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x380e, &reg_h,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x380f, &reg_l,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0)
+        return rc;
+	
+    capture_lines_max = reg_h & 0xff;
+    capture_lines_max = (capture_lines_max << 8) + reg_l;
+
+    CDBG("ov5640_hw_ae_transfer:0x380e=%x  0x380f=%x\n",reg_h,reg_l);
+	
+    if(m_60Hz== 1){
+        lines_10ms = 2 * CAPTURE_FRAMERATE * capture_lines_max / 12000;
+    }
+    else{
+        lines_10ms = 2 * CAPTURE_FRAMERATE * capture_lines_max / 10000;
+    }
+
+    CDBG("ov5640_hw_ae_transfer:lines_10ms=%x\n",lines_10ms);
+
+    if(preview_lines_max == 0){
+        preview_lines_max = 1;
+    }
+
+    capture_exposure = g_preview_exposure * 84 / 93;
+    capture_exposure = capture_exposure * 1896 / 2844;
+	
+    #if 0
+    //kenxu add for reduce noise under dark condition
+    if(gain > 32) //gain > 2x, gasin / 2, exposure * 2;
+    {
+        gain = gain / 2;
+        capture_exposure = capture_exposure * 2;
+    }
+    if(gain > 32) //gain > 2x, gain / 2, exposure * 2;
+    {
+        gain = gain / 2;
+        capture_exposure = capture_exposure * 2;
+    }
+    #endif
+	
+    //kenxu add for reduce noise under dark condition
+    if(gain > 32) //gain > 2x, gain / 2, exposure * 2;
+    {
+        gain = gain / 2;
+        capture_exposure = capture_exposure * 2;
+		  
+        if(gain > 64) //reach to max gain 16x, then improve contrast to pass SNR test under low light
+        {
+          	gain = gain / 2;
+          	capture_exposure = capture_exposure * 2;	
+          	
+          	//extend vts to set more exposure time
+            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x380e, 0x0a,MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+              return rc;
+            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x380f, 0x40,MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+              return rc;
+		  
+          	CDBG("ov5640_hw_ae_transfer:gain33333 =%x \n",gain);     	
+          	if(YAVG < 9){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x40,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}
+          	else if(YAVG == 9){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x3c,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}			
+          	else if(YAVG == 10){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x38,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}	
+          	else if(YAVG == 11){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x34,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}			
+          	else if(YAVG == 12){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x30,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}	
+          	else if(YAVG == 13){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x2c,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}			
+          	else if(YAVG == 14){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x28,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}	
+          	else if(YAVG == 15){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x24,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}			
+          	else if(YAVG == 16){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x20,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}	
+          	else if(YAVG == 17){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x1c,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}			
+          	else if(YAVG == 18){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x18,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+          	}	
+          	else if(YAVG == 19){
+	            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x4009, 0x14,MSM_CAMERA_I2C_BYTE_DATA);
+	            if (rc < 0)
+	              return rc;
+            }
+        }
+    }
+    capture_gain = gain;
+    exposure_low = ((unsigned char)capture_exposure) << 4;
+    exposure_mid = (unsigned char)(capture_exposure >> 4) & 0xff;
+    exposure_high = (unsigned char)(capture_exposure >> 12);
+ 
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x350b, (capture_gain & 0x00ff),MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0){
+        return rc;
+    }    
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x350a, ((capture_gain & 0xff00)>>8),MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0){
+        return rc;
+    }    
+	
+    //m_iWrite0x3502=exposure_low;
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x3502, exposure_low,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0){
+        return rc;
+    }    
+    CDBG("exposure_low  =%x \n",exposure_low);
+
+    //m_iWrite0x3501=exposure_mid;
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x3501, exposure_mid,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0){
+        return rc;
+    }    
+    CDBG("exposure_mid  =%x \n",exposure_mid);
+
+    //m_iWrite0x3500=exposure_high;
+    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x3500, exposure_high,MSM_CAMERA_I2C_BYTE_DATA);
+    if (rc < 0){
+        return rc;
+    }
+    CDBG("exposure_high  =%x  \n",exposure_high);
+
+    if(ov5640_effect_mode == MSM_V4L2_EFFECT_OFF)
+    {
+       CDBG("ov5640 write ov5640_effect_mode----snapshot!%s\n", __func__);
+
+	    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x5583, &g_preview_u,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;
+	    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x5584, &g_preview_v,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;	    
+	    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x5588, &reg_h,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;
+	    reg_h |= 0x41;
+	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5588, reg_h,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;
+	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5583,g_preview_uv,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;
+	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5584, g_preview_uv,MSM_CAMERA_I2C_BYTE_DATA);
+	    if (rc < 0)
+	        return rc;
+	preview_switch_to_snapshot =1;	//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start
+    }
+    mdelay(250); //inoder to deduce snapshot time 
+    return 0;
+}
+
+
+
+int32_t ov5640_sensor_setting(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res)
+{
+	int32_t rc = 0;
+	static int csi_config;
+	static int cancel_af_flag;
+
+	s_ctrl->func_tbl->sensor_stop_stream(s_ctrl);
+	msleep(5);
+	if (update_type == MSM_SENSOR_REG_INIT) {
+		CDBG("Register INIT\n");
+		s_ctrl->curr_csi_params = NULL;
+		msm_sensor_enable_debugfs(s_ctrl);
+		msm_sensor_write_init_settings(s_ctrl);
+		
+		/*ZTEBSP yuxin add for ov5640 download AF FW when sensor init,2012.05.23 ++*/
+		if (NULL != s_ctrl->func_tbl->sensor_download_af_firmware)
+			{
+
+		      rc=s_ctrl->func_tbl->sensor_download_af_firmware(s_ctrl);//ZTEBSP yuxin add for ov5640 AF FW download
+        		if(!rc)
+        		{
+        		  printk("%s:ov5640 AF FW download success\n",__func__);
+        		  download_flag=1;   //download success is 1
+        		}
+		}
+		/*ZTEBSP yuxin add for ov5640 download AF FW when sensor init,2012.05.23 --*/
+		csi_config = 0;
+		cancel_af_flag =0;
+	} else if (update_type == MSM_SENSOR_UPDATE_PERIODIC) {
+		 printk("PERIODIC : %d\n", res);
+		 printk("%s:sensor_name = %s, res = %d\n",__func__, s_ctrl->sensordata->sensor_name, res);
+
+		switch(res)
+		{
+			case 0://snapshot
+				{
+/*[ECID:000000] ZTEBSP wangbing, for camera soc flash, 20120702 */
+#ifdef CONFIG_ZTE_CAMERA_SOC_FLASH
+				uint16_t reg1;
+				led_mode_t  flash_mode;
+				flash_mode = msm_flash_mode_get();
+				CDBG("%s, flash mode %d\n", __func__, flash_mode);
+                            if (msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x56a1, &reg1,MSM_CAMERA_I2C_BYTE_DATA) < 0) {
+                            printk("ov5642 read reg_value wrong\n");
+                            return -EIO;
+                            }
+				CDBG("%s, expo value %d\n", __func__, reg1);					
+				if ((reg1 <0x24 && (flash_mode == LED_MODE_AUTO)) || (flash_mode == LED_MODE_ON)) {
+					camera_flash_set_led_state(MSM_CAMERA_LED_HIGH, 0x0a);	
+				}
+#endif					
+				rc=ov5640_hw_ae_parameter_record(s_ctrl);
+				if(rc<0)
+				{
+					CDBG("ov5640_hw_ae_parameter_record ERROR\n");
+					return rc;
+				}
+                    		msm_sensor_write_conf_array(
+                    			s_ctrl->sensor_i2c_client,
+                    			s_ctrl->msm_sensor_reg->mode_settings, res);
+                    		msleep(10);
+                    		if (!csi_config) {
+                    			s_ctrl->curr_csic_params = s_ctrl->csic_params[res];
+                    			CDBG("CSI config in progress\n");
+                    			v4l2_subdev_notify(&s_ctrl->sensor_v4l2_subdev,
+                    				NOTIFY_CSIC_CFG,
+                    				s_ctrl->curr_csic_params);
+                    			printk("CSI config is done\n");
+                    			mb();
+                    			msleep(10);
+                    			csi_config = 1;
+                    		}
+                    		v4l2_subdev_notify(&s_ctrl->sensor_v4l2_subdev,
+                    			NOTIFY_PCLK_CHANGE,
+                    			&s_ctrl->sensordata->pdata->ioclk.vfe_clk_rate);
+
+				rc=ov5640_hw_ae_transfer(s_ctrl);
+				if(rc<0)
+					{
+					CDBG("ov5640_hw_ae_transfer ERROR\n");
+					return rc;
+				}
+
+	                    	msleep(100);				
+				s_ctrl->func_tbl->sensor_start_stream(s_ctrl);
+				cancel_af_flag =1;
+				break;			
+			     }
+			case 1://preview
+			default :
+				{
+                    		msm_sensor_write_conf_array(
+                    			s_ctrl->sensor_i2c_client,
+                    			s_ctrl->msm_sensor_reg->mode_settings, res);
+                    		msleep(5);
+                    		if (!csi_config) {
+                    			s_ctrl->curr_csic_params = s_ctrl->csic_params[res];
+                    			CDBG("CSI config in progress\n");
+                    			v4l2_subdev_notify(&s_ctrl->sensor_v4l2_subdev,
+                    				NOTIFY_CSIC_CFG,
+                    				s_ctrl->curr_csic_params);
+                    			printk("CSI config is done\n");
+                    			mb();
+                    			msleep(5);
+                    			csi_config = 1;
+                    		}
+                    		v4l2_subdev_notify(&s_ctrl->sensor_v4l2_subdev,
+                    			NOTIFY_PCLK_CHANGE,
+                    			&s_ctrl->sensordata->pdata->ioclk.vfe_clk_rate);
+				if (preview_switch_to_snapshot)	//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start						
+				{
+     			         uint16_t reg_value;
+				     preview_switch_to_snapshot =0;	//ECID:0000 zhangzhao 2012-6-25 add ev algorithm start	 
+                                 if(ov5640_effect_mode == MSM_V4L2_EFFECT_OFF){
+                                 CDBG("ov5640 write ov5640_effect_mode----preview!%s\n", __func__);
+                                 rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5583, g_preview_u,MSM_CAMERA_I2C_BYTE_DATA);
+                                 if (rc < 0) {
+                                 CDBG("ov5640 write reg 0x5583 error!%s\n", __func__);
+                                 return rc;
+                                 }
+                                 rc =msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5584, g_preview_v,MSM_CAMERA_I2C_BYTE_DATA);
+                                 if (rc < 0) {
+                                 CDBG("ov5640 write reg 0x5584 error!%s\n", __func__);
+                                 return rc;
+                                 }
+                                 if (msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x5588, &reg_value,MSM_CAMERA_I2C_BYTE_DATA) < 0) {
+                                 CDBG("ov5642 read reg_value wrong\n");
+                                 return -EIO;
+                                 }
+                                 reg_value &= 0xbf;
+                                 rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,0x5588, reg_value,MSM_CAMERA_I2C_BYTE_DATA);
+                                 if (rc < 0) {
+                                 CDBG("ov5640 write reg 0x5588 error!%s\n", __func__);
+                                 return rc;
+                                 }
+                                 }
+                                // msleep(5);
+                    		}
+                                   msleep(5);
+                    		s_ctrl->func_tbl->sensor_start_stream(s_ctrl);
+                                   msleep(100);//zhangzhao 2012-8-17 optimize green screen problem
+                    		/*ZTEBSP yuxin add for ov5640 AF FW cancel 2012.05.23 ++*/
+                                     // cancel af when snapshot switch to preview     
+                                  if(cancel_af_flag) 
+                                  	{
+                                   if ((1 == res)&&(1 == download_flag))
+                                   {
+                    			if(NULL !=s_ctrl->func_tbl->sensor_set_af_result )	  	
+                    			 rc=s_ctrl->func_tbl->sensor_set_af_result(s_ctrl);			
+                                   }  
+                                   }  
+                    		/*ZTEBSP yuxin add for ov5640 AF FW cancel 2012.05.23 --*/
+                    		break;
+				}
+			}
+	}
+	return rc;
+}
+//ECID:0000 zhangzhao 2012-6-25 add ev algorithm end
+
+
+
+static int ov5640_pwdn_gpio;
+static int ov5640_reset_gpio;
+
+static void ov5640_release_gpio(void)
+{
+
+	CDBG("%s release gpio %d, %d\n", __func__,ov5640_pwdn_gpio,ov5640_reset_gpio);
+
+	gpio_free(ov5640_pwdn_gpio);
+	gpio_free(ov5640_reset_gpio);
+	
+}
+
+static void ov5640_hw_reset(void)
+{
+	CDBG("--CAMERA-- %s ... (Start...)\n", __func__);
+	gpio_set_value(ov5640_reset_gpio, 1);   /*reset camera reset pin*/
+	usleep_range(5000, 5100);
+	gpio_set_value(ov5640_reset_gpio, 0);
+	usleep_range(5000, 5100);
+	gpio_set_value(ov5640_reset_gpio, 1);
+	msleep(10);//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+	CDBG("--CAMERA-- %s ... (End...)\n", __func__);
+}
+
+static int ov5640_probe_init_gpio(const struct msm_camera_sensor_info *data)
+{
+	int rc = 0;
+	CDBG("%s: entered\n", __func__);
+
+	ov5640_pwdn_gpio = data->sensor_pwd;
+	ov5640_reset_gpio = data->sensor_reset ;
+
+	CDBG("%s: pwdn_gpio:%d, reset_gpio:%d\n", __func__,
+			ov5640_pwdn_gpio, ov5640_reset_gpio);
+
+	rc = gpio_request(ov5640_pwdn_gpio, "ov5640-pwd");
+	if (rc < 0)
+		{
+		pr_err("%s: gpio_request ov5640_pwdn_gpio failed!",
+			 __func__);
+		goto gpio_request_failed;
+		}
+
+	CDBG("gpio_tlmm_config %d\r\n", ov5640_pwdn_gpio);
+	rc = gpio_tlmm_config(GPIO_CFG(ov5640_pwdn_gpio, 0,
+		GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
+		GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+	if (rc < 0) {
+		pr_err("%s:unable to enable Powr Dwn gpio for main camera!\n",
+			 __func__);
+		gpio_free(ov5640_pwdn_gpio);
+		goto gpio_request_failed;
+	}
+
+	gpio_direction_output(ov5640_pwdn_gpio, 1);
+
+	rc = gpio_request(ov5640_reset_gpio, "ov5640-reset");
+	if (rc < 0)
+		{
+		pr_err("%s: gpio_request ov5640_reset_gpio failed!",
+			 __func__);
+		goto gpio_request_failed2;
+		}
+
+	pr_debug("gpio_tlmm_config %d\r\n", ov5640_reset_gpio);
+	rc = gpio_tlmm_config(GPIO_CFG(ov5640_reset_gpio, 0,
+		GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
+		GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+	if (rc < 0) {
+		pr_err("%s: unable to enable reset gpio for main camera!\n",
+			 __func__);
+		gpio_free(ov5640_reset_gpio);
+		goto gpio_request_failed2;
+	}
+
+	gpio_direction_output(ov5640_reset_gpio, 1);
+
+	if (data->sensor_reset_enable)
+		gpio_direction_output(data->sensor_reset, 1);
+
+	gpio_direction_output(data->sensor_pwd, 1);
+
+	return rc;
+gpio_request_failed2:
+		gpio_free(ov5640_pwdn_gpio);
+gpio_request_failed:
+	return rc;
+}
+static void ov5640_power_on(void)
+{
+	CDBG("%s\n", __func__);
+#if ((defined CONFIG_PROJECT_P865E01)||(defined CONFIG_PROJECT_P825A20))
+	gpio_set_value(39, 1);//power down 7692
+	usleep_range(5000, 8000);
+	gpio_set_value(49, 0);//zhangzhao switch mclk
+#endif	
+	usleep_range(9000, 9100);
+	gpio_set_value(ov5640_pwdn_gpio, 0); //power up
+	usleep_range(5000, 5100);
+}
+
+static void ov5640_power_down(void)
+{
+	CDBG("%s\n", __func__);
+	gpio_set_value(ov5640_pwdn_gpio, 1);//power down 
+	usleep_range(5000, 8000);
+#if ((defined CONFIG_PROJECT_P865E01)||(defined CONFIG_PROJECT_P825A20))	
+	gpio_set_value(49, 1);//zhangzhao
+	usleep_range(5000, 8000);
+	gpio_set_value(39, 1);//zhangzhao
+#endif	
+	usleep_range(5000, 5100);
+}
+
+// zte-modify, 20120831 fuyipeng modify for AF Rect for touch focus +++
+int32_t ov5640_sensor_set_af_rect(struct msm_sensor_ctrl_t *s_ctrl, 
+                                        struct msm_sensor_af_rect_data *rect)
+{
+//zhangzhao 2012-9-18 for touch focus start
+    int32_t rc = 0;
+    int xPoint = 0;
+    int yPoint = 0;
+
+    if (NULL == s_ctrl || NULL == rect)
+    {
+        return rc;
+    }
+
+    CDBG("rect.x:%d   rect.y:%d \n", rect->x, rect->y);
+
+    xPoint = (rect->x + rect->dx / 2)/8;
+    yPoint = (rect->y + rect->dy / 2)/8;
+
+    CDBG("-[------------]-----rect.x:%d   rect.y:%d \n", xPoint, yPoint);
+   rc= ov5640_set_sensor_touch_point(s_ctrl,xPoint,yPoint);
+//zhangzhao 2012-9-18 for touch focus end
+    return rc;
+}
+// zte-modify, 20120831 fuyipeng modify for AF Rect for touch focus ---
+
+int32_t ov5640_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int32_t rc = 0;
+	struct msm_camera_sensor_info *info = NULL;
+
+	CDBG("%s: %d\n", __func__, __LINE__);
+  
+	info = s_ctrl->sensordata;
+
+	rc = msm_sensor_power_up(s_ctrl);
+	if (rc < 0) {
+		printk("%s: msm_sensor_power_up failed\n", __func__);
+		return rc;
+	}
+
+	
+	/* turn on LDO for PVT */
+	//if (info->pmic_gpio_enable)
+	//	lcd_camera_power_onoff(1);
+
+	ov5640_power_down();
+	ov5640_power_on();
+	usleep_range(5000, 5100);
+
+	if (info->sensor_reset_enable)
+		ov5640_hw_reset();
+	//else
+	//	ov5640_sw_reset(s_ctrl);
+
+        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x300e, 0x0045, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      CDBG("ov5640_sensor_power_up: msm_camera_i2c_write FAILS!\n");
+		goto power_up_fail;
+        }
+
+	return rc;
+
+power_up_fail:
+	msm_sensor_power_down(s_ctrl);
+	CDBG("ov5640_sensor_power_up: OV5640 SENSOR POWER UP FAILS!\n");
+	//if (info->pmic_gpio_enable)
+	//	lcd_camera_power_onoff(0);
+	return rc;
+}
+
+
+int32_t ov5640_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int32_t rc = 0;
+	//struct msm_camera_sensor_info *info = NULL;
+
+	CDBG("%s: %d\n", __func__, __LINE__);
+
+	rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x300e, 0x005d, MSM_CAMERA_I2C_BYTE_DATA);
+        if (rc < 0)
+        {
+	      CDBG("ov5640_sensor_power_down: msm_camera_i2c_write FAILS!\n");
+		return rc;
+        }
+
+	ov5640_power_down();
+
+	rc = msm_sensor_power_down(s_ctrl);
+	if (rc < 0) {
+		CDBG("%s: msm_sensor_power_down failed\n", __func__);
+		return rc;
+	}
+	//info = s_ctrl->sensordata;
+
+		return rc;
+
+
+}
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+
+
+int32_t ov5640_sensor_i2c_probe(struct i2c_client *client,
+	const struct i2c_device_id *id)
+{
+	int rc = 0;
+	struct msm_camera_sensor_info *s_info;
+	
+	s_info = client->dev.platform_data;
+	if (s_info == NULL) {
+		pr_err("%s %s NULL sensor data\n", __func__, client->name);
+		return -EFAULT;
+	}
+      rc = ov5640_probe_init_gpio(s_info);
+      if(rc < 0)
+      	{
+		pr_err("%s probe faild--gpio requeset faild-----\n", __func__);
+		return -EFAULT;
+	  }
+	
+	rc = msm_sensor_i2c_probe(client, id);
+      if(rc < 0)
+      	 {
+		pr_err("%s probe faild-------\n", __func__);
+		goto probe_failed;
+	  }
+	pr_err("%s probe OK+++++++++++\n", __func__);
+	return rc;
+
+probe_failed:
+	ov5640_release_gpio();
+	return rc;
+}
 
 static const struct i2c_device_id ov5640_i2c_id[] = {
 	{SENSOR_NAME, (kernel_ulong_t)&ov5640_s_ctrl},
 	{ }
 };
-static struct msm_cam_clk_info cam_clk_info[] = {
-	{"cam_clk", MSM_SENSOR_MCLK_24HZ},
-};
-
-static struct msm_sensor_output_reg_addr_t ov5640_reg_addr = {
-	.x_output = 0,//0x3808,
-	.y_output = 0,//0x380A,
-	.line_length_pclk = 0,//0x3808,
-	.frame_length_lines = 0,//0x380A,
-};
-
-
-int32_t ov5640_sensor_i2c_probe_for_init(struct i2c_client *client,
-	const struct i2c_device_id *id)
-{
-
-	int rc = 0;
-	struct msm_sensor_ctrl_t *s_ctrl;
-	struct msm_camera_sensor_info *data;
-	CDBG("%s %s_i2c_probe called\n", __func__, client->name);
-	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		pr_err("%s %s i2c_check_functionality failed\n",
-			__func__, client->name);
-		rc = -EFAULT;
-		return rc;
-	}
-
-	s_ctrl = (struct msm_sensor_ctrl_t *)(id->driver_data);
-	if (s_ctrl->sensor_i2c_client != NULL) {
-		s_ctrl->sensor_i2c_client->client = client;
-		if (s_ctrl->sensor_i2c_addr != 0)
-			s_ctrl->sensor_i2c_client->client->addr =
-				s_ctrl->sensor_i2c_addr;
-	} else {
-		pr_err("%s %s sensor_i2c_client NULL\n",
-			__func__, client->name);
-		rc = -EFAULT;
-		return rc;
-	}
-
-	s_ctrl->sensordata = client->dev.platform_data;
-	if (s_ctrl->sensordata == NULL) {
-		pr_err("%s %s NULL sensor data\n", __func__, client->name);
-		return -EFAULT;
-	}
-
-      data = s_ctrl->sensordata;
-      s_ctrl->reg_ptr = kzalloc(sizeof(struct regulator *)
-			* data->sensor_platform_info->num_vreg, GFP_KERNEL);
-	if (!s_ctrl->reg_ptr) {
-		pr_err("%s: could not allocate mem for regulators\n",
-			__func__);
-		return -ENOMEM;
-	}
-
-	rc = msm_camera_request_gpio_table(data, 1);
-	if (rc < 0) {
-		pr_err("%s: request gpio failed\n", __func__);
-		goto request_gpio_failed;
-	}
-   
-	rc = msm_camera_config_vreg(&s_ctrl->sensor_i2c_client->client->dev,
-			s_ctrl->sensordata->sensor_platform_info->cam_vreg,
-			s_ctrl->sensordata->sensor_platform_info->num_vreg,
-			s_ctrl->reg_ptr, 1);
-	if (rc < 0) {
-		pr_err("%s: regulator on failed\n", __func__);
-		goto config_vreg_failed;
-	}
-
-	rc = msm_camera_enable_vreg(&s_ctrl->sensor_i2c_client->client->dev,
-			s_ctrl->sensordata->sensor_platform_info->cam_vreg,
-			s_ctrl->sensordata->sensor_platform_info->num_vreg,
-			s_ctrl->reg_ptr, 1);
-	if (rc < 0) {
-		pr_err("%s: enable regulator failed\n", __func__);
-		goto enable_vreg_failed;
-	}
-	
-	rc = msm_camera_config_gpio_table(data, 1);
-	if (rc < 0) {
-		pr_err("%s: config gpio failed\n", __func__);
-		goto config_gpio_failed;
-	}
-
-	if (s_ctrl->clk_rate != 0)
-		cam_clk_info->clk_rate = s_ctrl->clk_rate;
-
-	rc = msm_cam_clk_enable(&s_ctrl->sensor_i2c_client->client->dev,
-		cam_clk_info, &s_ctrl->cam_clk, ARRAY_SIZE(cam_clk_info), 1);
-	if (rc < 0) {
-		pr_err("%s: clk enable failed\n", __func__);
-		goto enable_clk_failed;
-	}
-
-	msleep(1);
-
-	gpio_direction_output(data->sensor_pwd, 0);
-	msleep(1);
-	
-	gpio_direction_output(data->sensor_reset, 1);
-	msleep(5);
-	
-	gpio_direction_output(data->sensor_reset, 0);
-	msleep(5);
-	
-	gpio_direction_output(data->sensor_reset, 1);
-	msleep(5);
-
-	if (s_ctrl->func_tbl->sensor_match_id)
-		rc = s_ctrl->func_tbl->sensor_match_id(s_ctrl);
-	else
-		rc = msm_sensor_match_id(s_ctrl);
-	if (rc < 0)
-		goto probe_fail;
-
-#ifdef CONFIG_SENSOR_INFO
-	msm_sensorinfo_set_sensor_id(0x5640);
-#endif
-
-	if (s_ctrl->func_tbl->sensor_csi_setting(s_ctrl, MSM_SENSOR_REG_INIT, 0) < 0)
-	{
-		pr_err("%s  sensor_setting init  failed\n",__func__);
-		return rc;
-	}
-
-	snprintf(s_ctrl->sensor_v4l2_subdev.name,
-		sizeof(s_ctrl->sensor_v4l2_subdev.name), "%s", id->name);
-	v4l2_i2c_subdev_init(&s_ctrl->sensor_v4l2_subdev, client,
-		s_ctrl->sensor_v4l2_subdev_ops);
-
-	msm_sensor_register(&s_ctrl->sensor_v4l2_subdev);
-	goto power_down;
-probe_fail:
-	pr_err("%s %s_i2c_probe failed\n", __func__, client->name);
-	msm_cam_clk_enable(&s_ctrl->sensor_i2c_client->client->dev,
-		cam_clk_info, &s_ctrl->cam_clk, ARRAY_SIZE(cam_clk_info), 0);
-enable_clk_failed:
-		msm_camera_config_gpio_table(data, 0);
-config_gpio_failed:
-	msm_camera_enable_vreg(&s_ctrl->sensor_i2c_client->client->dev,
-			s_ctrl->sensordata->sensor_platform_info->cam_vreg,
-			s_ctrl->sensordata->sensor_platform_info->num_vreg,
-			s_ctrl->reg_ptr, 0);
-
-enable_vreg_failed:
-	msm_camera_config_vreg(&s_ctrl->sensor_i2c_client->client->dev,
-		s_ctrl->sensordata->sensor_platform_info->cam_vreg,
-		s_ctrl->sensordata->sensor_platform_info->num_vreg,
-		s_ctrl->reg_ptr, 0);
-config_vreg_failed:
-	msm_camera_request_gpio_table(data, 0);
-request_gpio_failed:
-	kfree(s_ctrl->reg_ptr);
-	return rc;
-power_down:
-	if (rc > 0)
-		rc = 0;
-	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
-	return rc;
-}
-
 
 static struct i2c_driver ov5640_i2c_driver = {
 	.id_table = ov5640_i2c_id,
-	.probe  = ov5640_sensor_i2c_probe_for_init,
+	.probe  = ov5640_sensor_i2c_probe,
 	.driver = {
 		.name = SENSOR_NAME,
 	},
@@ -337,25 +3658,21 @@ static struct i2c_driver ov5640_i2c_driver = {
 static struct msm_camera_i2c_client ov5640_sensor_i2c_client = {
 	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
 };
-
 static int __init msm_sensor_init_module(void)
 {
-	int rc = 0;
-	CDBG("ov5640\n");
-
-	rc = i2c_add_driver(&ov5640_i2c_driver);
-
-	return rc;
+       CDBG(KERN_ERR "%s():cam here!-----%d\n", __func__,  __LINE__); 
+	//return platform_driver_register(&ov5640_driver);
+	return i2c_add_driver(&ov5640_i2c_driver);
 }
 
-static struct v4l2_subdev_core_ops ov5640_subdev_core_ops = {
+static struct v4l2_subdev_core_ops ov5640_subdev_core_ops ={
 	.s_ctrl = msm_sensor_v4l2_s_ctrl,
 	.queryctrl = msm_sensor_v4l2_query_ctrl,
 	.ioctl = msm_sensor_subdev_ioctl,
 	.s_power = msm_sensor_power,
 };
 
-static struct v4l2_subdev_video_ops ov5640_subdev_video_ops = {
+	static struct v4l2_subdev_video_ops ov5640_subdev_video_ops = {
 	.enum_mbus_fmt = msm_sensor_v4l2_enum_fmt,
 };
 
@@ -364,3341 +3681,101 @@ static struct v4l2_subdev_ops ov5640_subdev_ops = {
 	.video  = &ov5640_subdev_video_ops,
 };
 
-static void ov5640_start_stream(struct msm_sensor_ctrl_t *s_ctrl) 
+
+
+static int ov5640_sensor_cancel_af(struct msm_sensor_ctrl_t *s_ctrl)
 {
-  pr_err("%s\n", __func__);
-  msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3017,0xff,MSM_CAMERA_I2C_BYTE_DATA);  
-  msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3018,0xff,MSM_CAMERA_I2C_BYTE_DATA);  
+//zhangzhao 2012-9-18 for touch focus start
+	int rc =0;
+	 CDBG("%s:++++++++++++++++++++!\n", __func__);
+    af_count = 0;
+    rc= ov5640_set_sensor_touch_point(s_ctrl,40,30);
+    if(rc)
+	return rc;	
+//zhangzhao 2012-9-18 for touch focus end
+
+        return ov5640_set_af_result(s_ctrl, 0x08);
 }
+//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time end
 
-static void ov5640_stop_stream(struct msm_sensor_ctrl_t *s_ctrl) 
-	
+/*[617001744332]modified by zhangzhao 2012-12-4 for camera flash*/
+#ifdef CONFIG_PROJECT_P825B20	
+static int32_t ov5640_sensor_flash_auto_state(struct msm_sensor_ctrl_t *s_ctrl, 
+                                        uint8_t *AutoFlash)
 {
-
-  pr_err("%s\n", __func__);
-  msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3017,0x00,MSM_CAMERA_I2C_BYTE_DATA);  
-  msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3018,0x00,MSM_CAMERA_I2C_BYTE_DATA);   
-}
+    int32_t rc = 0;
+    uint16_t reg_value;
 
 
-int32_t msm_ov5640_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	int32_t rc = 0;
-	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
+    if (msm_camera_i2c_read(s_ctrl->sensor_i2c_client,0x56a1, &reg_value,MSM_CAMERA_I2C_BYTE_DATA) < 0) {
+      pr_err("ov5642 read reg_value wrong\n");
+      return -EIO;
+     }
 
-	rc = msm_camera_request_gpio_table(data, 1);
-	if (rc < 0) {
-		pr_err("%s: request gpio failed\n", __func__);
-		return rc;
-	}
-	rc = msm_camera_config_gpio_table(data, 1);
-	if (rc < 0) {
-		pr_err("%s: config gpio failed\n", __func__);
-		return rc;
-	}
+    CDBG("%s, expo value %d\n", __func__, reg_value);
 
-	if (s_ctrl->clk_rate != 0)
-		cam_clk_info->clk_rate = s_ctrl->clk_rate;
-
-	rc = msm_cam_clk_enable(&s_ctrl->sensor_i2c_client->client->dev,
-		cam_clk_info, &s_ctrl->cam_clk, ARRAY_SIZE(cam_clk_info), 1);
-	if (rc < 0) {
-		pr_err("%s: clk enable failed\n", __func__);
-		goto enable_clk_failed;
-	}
-	msleep(10);
-	gpio_direction_output(data->sensor_pwd, 0);
-	msleep(10);
-	
-	   	
-	if (rc < 0) {
-		pr_err("%s: i2c write failed\n", __func__);
-		return rc;
-	}
-
-	if (data->sensor_platform_info->ext_power_ctrl != NULL)
-		data->sensor_platform_info->ext_power_ctrl(1);
-
-	if (data->sensor_platform_info->i2c_conf &&
-		data->sensor_platform_info->i2c_conf->use_i2c_mux)
-		msm_sensor_enable_i2c_mux(data->sensor_platform_info->i2c_conf);
-		
-	return rc;
-
-enable_clk_failed:
-		msm_camera_config_gpio_table(data, 0);
-		return rc;
-	
-}
-
-
-
-int32_t msm_ov5640_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
-	pr_err("%s\n", __func__);
-	if (data->sensor_platform_info->i2c_conf &&
-		data->sensor_platform_info->i2c_conf->use_i2c_mux)
-		msm_sensor_disable_i2c_mux(
-			data->sensor_platform_info->i2c_conf);
-
-	if (data->sensor_platform_info->ext_power_ctrl != NULL)
-		data->sensor_platform_info->ext_power_ctrl(0);
-   
-    ov5640_stop_stream(s_ctrl) ;
-	gpio_direction_output(data->sensor_pwd, 1);
-
-	msleep(30);
-
-	zte_effect=0xff;
-	zte_sat=0xff;
-	zte_contrast=0xff;
-	zte_sharpness=0xff;
-	zte_afmode = 0xff;
-	zte_iso=0xff;
-	zte_exposure= 0xff;
-	zte_awb= 0xff;
-	zte_antibanding= 0xff;
-	
-	msm_cam_clk_enable(&s_ctrl->sensor_i2c_client->client->dev,
-		cam_clk_info, &s_ctrl->cam_clk, ARRAY_SIZE(cam_clk_info), 0);
-	msm_camera_config_gpio_table(data, 0);
-	msm_camera_request_gpio_table(data, 0);
-	return 0;
-}
-
-
-//add params setting
-
-int ov5640_set_effect(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-
-    int rc = 0;
-    uint16_t tmp_reg = 0;
-	  
-    pr_err("%s   value=%d\n", __func__, value);
-      
-    switch (value)
+    if (reg_value < 0x24)
     {
-        case CAMERA_EFFECT_OFF:
-        {
-
-            msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x000f, MSM_CAMERA_I2C_BYTE_DATA);
-	        if (rc < 0)
-	        {
-		      return rc;
-	        }
-		    if( zte_effect != 0xff)
-		    {
-		      pr_err("%s  msleep 100\n", __func__);
-	          msleep(100);
-		    }
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x001e, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg &= 0x0006;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }   
-		    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-		    if (rc < 0)
-		    {
-			  return rc;
-		    }
-        }
-        break;
-
-        case CAMERA_EFFECT_MONO:
-        {
-	        msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x000f, MSM_CAMERA_I2C_BYTE_DATA);
-		    if (rc < 0)
-	        {
-		      return rc;
-	        }
-		    if( zte_effect != 0xff)
-		    msleep(100);
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0080, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0080, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x0087;
-            tmp_reg |= 0x0018;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-	        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-	        if (rc < 0)
-		    {
-			   return rc;
-		    }
-        }
-        break;
-        
-        case CAMERA_EFFECT_NEGATIVE:
-        {
-	        msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x000f, MSM_CAMERA_I2C_BYTE_DATA);
-			if( zte_effect != 0xff)
-			msleep(100);
-		    if (rc < 0)
-		    {
-			   return rc;
-		    }
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x0087;
-            tmp_reg |= 0x0040;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-		    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-	        if (rc < 0)
-	        {
-		      return rc;
-	        }
-        }
-        break;          
-        
-        case CAMERA_EFFECT_SEPIA:
-        {
-	        msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x000f, MSM_CAMERA_I2C_BYTE_DATA);
-		    if( zte_effect != 0xff)
-		     msleep(100);
-	        if (rc < 0)
-	        {
-		      return rc;
-	        }
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x00a0, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x0087;
-            tmp_reg |= 0x0018;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-	        rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x4202, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-	        if (rc < 0)
-	        {
-		      return rc;
-	        }
-        }
-        break;
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            return -EFAULT;
-        }
-
-       }
-
-	if( rc == 0)
-		zte_effect = value;
-
-	return rc;
-}
-
-
-int ov5640_set_sharpness(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	pr_err("%s   value=%d\n", __func__, value);
-	
-    if(zte_effect != CAMERA_EFFECT_OFF)
-    {
-       pr_err("%s: return quickly\n", __func__);
-       return rc;
+        *AutoFlash = 1;
     }
-
-	if( zte_sharpness== value)
-	{
-	    pr_err("%s: return quickly\n", __func__);
-	    return rc;
-	}
-		
-    switch (value)
+    else
     {
-        case MSM_V4L2_SHARPNESS_L0:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5308 ,0x0065, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5302 ,0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5303 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_SHARPNESS_L1:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5308 ,0x0065, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5302 ,0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5303 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_SHARPNESS_L2:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5308 ,0x0025, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5302 ,0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5303 ,0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-        
-        case MSM_V4L2_SHARPNESS_L3:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5308 ,0x0065, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5302 ,0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5303 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break; 
-
-        case MSM_V4L2_SHARPNESS_L4:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5308 ,0x0065, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5302 ,0x0002, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5303 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;        
-        
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            rc = -EFAULT;
-        }     
-    }
-
-	if( rc == 0)
-		zte_sharpness= value;
-		
-	return rc;
-}
-
-
-int ov5640_set_saturation(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	uint16_t tmp_reg = 0;
-    pr_err("%s   value=%d\n", __func__, value);
-	   
-    
-    switch(value)
-    {
-        case MSM_V4L2_SATURATION_L0:
-        {
-            #if 0	
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-			/*
-			* ZTE_LJ_CAM_20101026
-			* fix bug of no preview image after changing effect mode repeatedly
-			*/
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			#endif
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0002;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}    
-			tmp_reg = 0;
-
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0040;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}              
-			}
-			break;
-
-        case MSM_V4L2_SATURATION_L1:
-        {
-		   #if 0
-	            //WT_CAM_20110421
-	            tmp_reg = 0;
-	            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-	            if (rc < 0)
-	            {
-	               return rc;
-	            }
-
-			/*
-			* ZTE_LJ_CAM_20101026
-			* fix bug of no preview image after changing effect mode repeatedly
-			*/
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			#endif
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0038, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0002;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}  
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0040;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}      
-			}
-			break;
-
-	case MSM_V4L2_SATURATION_L2:
-	{
-			#if 0
-			//WT_CAM_20110421
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-
-			/*
-			* ZTE_LJ_CAM_20101026
-			* fix bug of no preview image after changing effect mode repeatedly
-			*/
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			#endif
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x001e, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0002;
-
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			} 
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg &= 0x00bf;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}      
-	}
-	break;
-
-	case MSM_V4L2_SATURATION_L3:
-	{
-			#if 0
-			//WT_CAM_20110421
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-
-			/*
-			* ZTE_LJ_CAM_20101026
-			* fix bug of no preview image after changing effect mode repeatedly
-			*/
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			#endif
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0050, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0038, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0002;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}  
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0040;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}      
-	}
-	break;
-
-	case MSM_V4L2_SATURATION_L4:
-	{
-			#if 0
-			//WT_CAM_20110421
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-
-			/*
-			* ZTE_LJ_CAM_20101026
-			* fix bug of no preview image after changing effect mode repeatedly
-			*/
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			#endif
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5583, 0x0060, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}            
-
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5584, 0x0048, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0002;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}  
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg &= 0x00FF;
-			tmp_reg |= 0x0040;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}      
-	}        
-	break;
-
-	default:
-	{
-			pr_err("%s: parameter error!\n", __func__);
-			return -EFAULT;
-	}            
-	}
-    if( rc == 0)
-		zte_sat= value;
-       
-	return rc;
-}
-
-
-int ov5640_set_contrast(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	uint16_t tmp_reg = 0;
-	pr_err("%s   value=%d\n", __func__, value);
-
-   
-    switch(value)
-    {
-        case CAMERA_CONTRAST_0:
-        {
-	        #if 0
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5586, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5585, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-        }
-        break;
-
-        case CAMERA_CONTRAST_1:
-        {
-	        #if 0
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5586, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5585, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-        }
-        break;
-
-        case CAMERA_CONTRAST_2:
-        {
-	        #if 0
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5586, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5585, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-        }
-        break;
-
-        case CAMERA_CONTRAST_3:
-        {
-	        #if 0
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5586, 0x0024, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5585, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-        }
-        break;
-
-        case CAMERA_CONTRAST_4:
-        {
-	        #if 0
-            //WT_CAM_20110421
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            /*
-             * ZTE_LJ_CAM_20101026
-             * fix bug of no preview image after changing effect mode repeatedly
-             */
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5586, 0x002c, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5585, 0x001c, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-        }        
-        break;
-
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            return -EFAULT;
-        }            
-    }
-    if( rc == 0)
-		zte_contrast= value;
-	return rc;
-}
-
-int ov5640_set_wb(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	pr_err("%s   value=%d\n", __func__, value);
- 
-
-    switch(value)
-    {
-        case MSM_V4L2_WB_AUTO:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3406, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_WB_DAYLIGHT:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3406 ,0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3400 ,0x0006, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3401 ,0x001c, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3402 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3403 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3404 ,0x0005, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3405 ,0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-          
-        }
-        break;
-
-        case MSM_V4L2_WB_INCANDESCENT:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3406 ,0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3400 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3401 ,0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3402 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3403 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3404 ,0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3405 ,0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-        
-        case MSM_V4L2_WB_FLUORESCENT:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3406 ,0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3400 ,0x0005, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3401 ,0x0048, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3402 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3403 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3404 ,0x0007, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3405 ,0x00c0, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break; 
-
-        case MSM_V4L2_WB_CLOUDY_DAYLIGHT:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3406 ,0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3400 ,0x0006, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3401 ,0x0048, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3402 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3403 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3404 ,0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3405 ,0x00d3, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-        #if 0
-        case CAMERA_WB_MODE_NIGHT:
-        {
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3a00, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a00, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a02 ,0x000b, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a03 ,0x0088, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a14 ,0x000b, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a15 ,0x0088, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            /*
-               * Change preview FPS from 1500 to 375
-               */
-//            g_preview_frame_rate  = 375;
-        }
-        break;
-        #endif
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            return -EFAULT;
-        }     
-    }
-
-	zte_awb = value;
-
-	return rc;
-}
-
-int ov5640_set_exposure_compensation(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	pr_err("%s   value=%d\n", __func__, value);
-
-	if( zte_exposure == value)
-	{
-	    pr_err("%s: return quickly\n", __func__);
-	    return rc;
-	}
-
-    switch(value)
-    {
-        case MSM_V4L2_EXPOSURE_N2:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a0f, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a10, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a11, 0x0050, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1b, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1e, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1f, 0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }        
-        }
-        break;
-        
-        case MSM_V4L2_EXPOSURE_N1:
-        {	
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a0f, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a10, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a11, 0x0050, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1b, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1e, 0x0018, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1f, 0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }       
-        }
-        break;
-
-        case MSM_V4L2_EXPOSURE_D:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a0f, 0x0038, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a10, 0x0030, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a11, 0x0060, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1b, 0x0038, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1e, 0x0030, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1f, 0x0014, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_EXPOSURE_P1:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a0f, 0x0048, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a10, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a11, 0x0070, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1b, 0x0048, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1e, 0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1f, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }        
-        }
-        break;
-
-        case MSM_V4L2_EXPOSURE_P2:
-        {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a0f, 0x0058, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a10, 0x0050, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a11, 0x0080, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1b, 0x0058, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1e, 0x0050, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3a1f, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }       
-        }
-        break;
-        
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            return -EFAULT;
-        }        
-    }
-
-    zte_exposure = value;
-		
-	return rc;
-}
-
-int ov5640_set_iso(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc = 0;
-	pr_err("%s   value=%d\n", __func__, value);
-
-	if( zte_iso == value)
-	{
-	    pr_err("%s: return quickly\n", __func__);
-	    return rc;
-	}
-
-    switch (value)
-    {
-        case MSM_V4L2_ISO_AUTO:
-        {
-            //WT_CAM_20110428 iso value
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A18 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            #if 1 // 主观测试版本 2011-06-16 ken
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x00f8, MSM_CAMERA_I2C_BYTE_DATA);	
-            #else
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            #endif
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_ISO_100:
-        {
-	        #if 0
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0002, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x350b ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }		  
-	        msleep(100);	
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A18 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-        }
-        break;
-
-        case MSM_V4L2_ISO_200:
-        {
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0002, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x350b ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }		  
-	        msleep(100);
-            #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A18 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x0040, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }		
-	        #endif
-        }
-        break;
-
-        case MSM_V4L2_ISO_400:
-        {
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0002, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x350b ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }		  
-	        msleep(100);
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A18 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x0080, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-	        #endif
-        }
-        break;
-
-        case MSM_V4L2_ISO_800:
-        {
-	        #if 0
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0002, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-    	    rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x350b ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }		  
-		    msleep(100);	
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A18 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A19 ,0x00f8, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #if 0
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3503 ,0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }	
-	        #endif
-        }
-        break;
-
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            rc = -EFAULT;
-        }    
-    }
-
-    if( rc==0 )
-	   zte_iso = value;
-	return rc;
-}
-
-int ov5640_set_touch_af_ae( struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	
-	int x=value>>21;
-	int y=(value&0x1ffc00)>>11;  
-
-	pr_err("ov5640 %s  x=%d y=%d   value=%d     \n", __func__ ,x,y,value);
-
-	if(x>0 || y>0)
-	{
-	ov5640_TouchAF_x = x/8;
-	ov5640_TouchAF_y = y/8;	
-	}
-	
-	return 0;
-}
-
-
-int ov5640_set_brightness( struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-
-    long rc = 0;
-    uint16_t tmp_reg = 0;
-
-    pr_err("%s: entry: brightness=%d\n", __func__, value);
-
-    switch(value)
-    {
-        case MSM_V4L2_BRIGHTNESS_L0:
-        {
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0030, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0008;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L1:
-        {
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0008;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L2:
-        {
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }            
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0008;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }  
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L3:
-        {
-	        #if 0
-        	tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00F7;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-                  
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L4:
-        {
-	        #if 0
-        	tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0010, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00F7;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            } 
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L5:
-        {
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0020, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00F7;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-        }
-        break;
-
-        case MSM_V4L2_BRIGHTNESS_L6:
-        {
-	        #if 0
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5001, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00FF;
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5001, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-	        #endif
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5587, 0x0030, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            //WT_CAM_20110411 write 5580
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5580, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0004;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5580, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x5588, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg &= 0x00F7;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x5588, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }  
-        }
-        break;
-
-        default:
-        {
-            pr_err("%s: parameter error!\n", __func__);
-            return -EFAULT;
-        }            
+        *AutoFlash = 0;
     }
 
     return rc;
-
 }
-
-
-
-int ov5640_set_af_mode( struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-
-    long rc = 0;
-    uint16_t af_ack=0x0002;
-    uint32_t i;
-
-    pr_err("%s: value:%d\n", __func__,value);
-
-   if( zte_af_force_write)
-   {
-   }
-   else if( zte_afmode == value )
-   {
-       pr_err("%s: return quickly\n", __func__);
-       return rc;
-   }
-
-    if( value == 2 )//AF_MODE_AUTO
-    {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3027, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3028, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-    }
-    else if(  value == 1 )//AF_MODE_MACRO
-    {
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3027, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3028, 0xff, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-			} 
-    else
-    {
-	        return -EFAULT;
-    }
-	
-     rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
-     if (rc < 0)
-     {
-       return rc;
-     }
-     rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x1a, MSM_CAMERA_I2C_BYTE_DATA);
-     if (rc < 0)
-     {
-       return rc;
-     }
-
-	for (i = 0; (i < 100) && (0x0000 != af_ack); ++i)
-	{
-		af_ack = 0x0002;
-		rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &af_ack, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-		pr_err("%s: rc < 0\n", __func__);
-		break;
-		} 
-	        mdelay(15);
-       }
-
-	zte_afmode = value;
-    return rc;
-
-}
-
-
-int ov5640_set_antibanding(struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	long rc = 0;
-    uint16_t tmp_reg = 0;
-	pr_err("%s E,value=%d\n",__func__,value);
-
-    if( zte_antibanding== value )
-	{
-	  	CDBG("%s: return quickly\n", __func__);
-	    return rc;
-	}
-	
-    switch( value)
-    {
-      case CAMERA_ANTIBANDING_60HZ:
-	  {
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3c01, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3C01, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-
-            
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3C00, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A0A, 0x0000, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A0B, 0x00f6, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3A0D, 0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-	  	break;
-	  }
-	  case CAMERA_ANTIBANDING_50HZ:
-	  {
-            tmp_reg = 0;
-            rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3c01, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-               return rc;
-            }
-            tmp_reg |= 0x0080;
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,  0x3C01, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-            rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client,  0x3C00, 0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-            if (rc < 0)
-            {
-                return rc;
-            }
-	  	break;
-	  }
-	  case CAMERA_ANTIBANDING_OFF:
-	  case CAMERA_ANTIBANDING_AUTO:
-	  {
-			tmp_reg = 0;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3c01, &tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			tmp_reg |= 0x0080;
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3C01, tmp_reg, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			}
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3C00, 0x0004, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			return rc;
-			} 
-	  	break;
-	  }
-	  
-	  default:
-	  	pr_err("%s: invalid value\n", __func__);
-	  	break;
-    }
-
-    if( rc == 0)
-	  zte_antibanding= value;
-	
-	pr_err("%s X\n",__func__);
-	return rc;
-}
-
-
-
-long ov5640_flash_auto_mode_flag_judge(struct msm_sensor_ctrl_t *s_ctrl)
-{
-
-	long rc = 0;
-    uint16_t g_preview_gain_flash;
-    uint16_t ov5640_auto_flash_threshold = 0xF0;
-       
-    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x350b, &g_preview_gain_flash, MSM_CAMERA_I2C_BYTE_DATA);
-
-    if (rc < 0)
-    {
-        return rc;
-    }
-	
-    if( g_preview_gain_flash >= ov5640_auto_flash_threshold )
-  	{
-       zte_flash_auto_flag_set_value(1);
-    }
-    else
-  	{
-  	   zte_flash_auto_flag_set_value(0);
-    }
-    return 0;  
-
-}
-
-
-static int32_t ov5640_i2c_write_b_sensor(struct msm_sensor_ctrl_t *s_ctrl,unsigned int waddr, unsigned short bdata)
-{
-   return msm_camera_i2c_write(s_ctrl->sensor_i2c_client,waddr, bdata,MSM_CAMERA_I2C_BYTE_DATA);  
-}
-static int32_t ov5640_i2c_read_byte(struct msm_sensor_ctrl_t *s_ctrl,unsigned short raddr, unsigned short *rdata)
-{
-   return msm_camera_i2c_read(s_ctrl->sensor_i2c_client,raddr, rdata,MSM_CAMERA_I2C_BYTE_DATA);
-}
-
-//===============AE start=================
-
-
-int XVCLK = 2400;	// real clock/10000
-
-static int ov5640_get_sysclk(struct msm_sensor_ctrl_t *s_ctrl)
-{
-//	int8_t buf[2];
-	unsigned short  buf[2];
-	 // calculate sysclk
-	 int Multiplier, PreDiv, VCO, SysDiv, Pll_rdiv, Bit_div2x = 1, sclk_rdiv, sysclk;
-
-	 int sclk_rdiv_map[] = { 1, 2, 4, 8};
-
-	ov5640_i2c_read_byte(s_ctrl,0x3034, buf);
-	
-	buf[1] = buf[0] & 0x0f;
-	 if (buf[1] == 8 || buf[1] == 10) {
-		 Bit_div2x = buf[1] / 2;
-	 }
-
-	ov5640_i2c_read_byte(s_ctrl,0x3035, buf);
-	 SysDiv = buf[0] >>4;
-	 if(SysDiv == 0) {
-		 SysDiv = 16;
-	 }
-
-	ov5640_i2c_read_byte(s_ctrl,0x3036, buf);
-	 Multiplier = buf[0];
-
-	ov5640_i2c_read_byte(s_ctrl,0x3037, buf);
-	 PreDiv = buf[0] & 0x0f;
-	 Pll_rdiv = ((buf[0] >> 4) & 0x01) + 1;
-
-	ov5640_i2c_read_byte(s_ctrl,0x3108, buf);
-	 buf[1] = buf[0] & 0x03;
-	 sclk_rdiv = sclk_rdiv_map[buf[1]]; 
-
-	 VCO = XVCLK * Multiplier / PreDiv;
-
-	 sysclk = VCO / SysDiv / Pll_rdiv * 2 / Bit_div2x / sclk_rdiv;
-
-	 return sysclk;
-}
-
-static int ov5640_get_HTS(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	//int8_t buf[2];
-	unsigned short buf[2];
-	 // read HTS from register settings
-	 int HTS;
-
-	ov5640_i2c_read_byte(s_ctrl,0x380c, buf);
-	ov5640_i2c_read_byte(s_ctrl,0x380d, &buf[1]);
-	 HTS=buf[0];
-	 HTS = (HTS<<8) + buf[1];
-
-	 return HTS;
-}
-
-static int ov5640_get_VTS(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	//int8_t buf[2];
-	unsigned short  buf[2];
-	 // read VTS from register settings
-	 int VTS;
-
-	ov5640_i2c_read_byte(s_ctrl,0x380e, buf);
-	printk("%s: 0x380e=0x%x\n", __func__, buf[0]);
-	ov5640_i2c_read_byte(s_ctrl,0x380f, &buf[1]);
-	printk("%s: 0x380e=0x%x\n", __func__, buf[1]);
-	VTS = buf[0];
-	VTS = VTS<<8;
-	VTS += (unsigned char)buf[1];
-	printk("%s: VTS=0x%x\n", __func__, VTS);
-
-	 return VTS;
-}
-
-static int ov5640_set_VTS(struct msm_sensor_ctrl_t *s_ctrl,int VTS)
-{
-	unsigned short buf[2];
-	 // write VTS to registers
-	 
-
-	 //temp = VTS & 0xff;
-	 buf[0] = VTS & 0xff;
-	 printk("%s: VTS & oxff = 0x%x\n", __func__, buf[0]);
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x380f, buf[0]);
-
-	 buf[0] = VTS>>8;
-	 printk("%s: VTS>>8 = 0x%x\n", __func__, buf[0]);
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x380e, buf[0]);
-
-	 return 0;
-}
-
-static int ov5640_set_shutter(struct msm_sensor_ctrl_t *s_ctrl,int shutter)
-{
-	 // write shutter, in number of line period
-	unsigned short buf[2];
-	 int temp;
-	 
-	 shutter = shutter & 0xffff;
-
-	 temp = shutter & 0x0f;
-	 buf[0] = temp<<4;
-	 printk("%s: shutter&0x0f <<4 0x%x\n", __func__, buf[0]);
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x3502, buf[0]);
-
-	 temp = shutter & 0xfff;
-	 buf[0] = temp>>4;
-	 printk("%s: shutter&0xfff >>4 0x%x\n", __func__, buf[0]);
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x3501,buf[0]);
-
-	 temp = shutter>>12;
-	 buf[0] = temp;
-	 printk("%s: shutter>>12 0x%x\n", __func__, buf[0]);
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x3500, buf[0]);
-
-	 return 0;
-}
-
-static int ov5640_set_gain16(struct msm_sensor_ctrl_t *s_ctrl,int gain16)
-{
-	 // write gain, 16 = 1x
-	 int16_t buf[2];
-	 //unsigned short buf[2];
-	 
-	 gain16 = gain16 & 0x3ff;
-
-	 buf[0] = gain16 & 0xff;
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x350b, buf[0]);
-
-	 buf[0] = gain16>>8;
-	 ov5640_i2c_write_b_sensor(s_ctrl,0x350a, buf[0]);
-
-	 return 0;
-}
-
-static int ov5640_get_light_frequency(struct msm_sensor_ctrl_t *s_ctrl)
-{
-// get banding filter value
-int light_frequency = 0;
-unsigned short buf[2];
-
-ov5640_i2c_read_byte(s_ctrl,0x3c01, buf);
-
- if (buf[0] & 0x80) {
-	 // manual
-	 ov5640_i2c_read_byte(s_ctrl,0x3c00, &buf[1]);
-	 if (buf[1] & 0x04) {
-		 // 50Hz
-		 light_frequency = 50;
-	 }
-	 else {
-		 // 60Hz
-		 light_frequency = 60;
-	 }
- }
- else {
-	 // auto
-	 ov5640_i2c_read_byte(s_ctrl,0x3c0c, &buf[1]);
-	 if (buf[1] & 0x01) {
-		 // 50Hz
-		 light_frequency = 50;
-	 }
-	 else {
-		 // 60Hz
-	 }
- }
- return light_frequency;
-}
-
-
-
-static void ov5640_set_bandingfilter(struct msm_sensor_ctrl_t *s_ctrl)
-{
-int16_t buf[2];
-//unsigned short buf[2];
-int preview_VTS;
-int band_step60, max_band60, band_step50, max_band50;
-
- // read preview PCLK
- preview_sysclk = ov5640_get_sysclk(s_ctrl);
-
- // read preview HTS
- preview_HTS = ov5640_get_HTS(s_ctrl);
-
- // read preview VTS
- preview_VTS = ov5640_get_VTS(s_ctrl);
-
- // calculate banding filter
- // 60Hz
- band_step60 = preview_sysclk * 100/preview_HTS * 100/120;
- buf[0] = band_step60 >> 8;
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a0a, buf[0]);
- buf[0] = band_step60 & 0xff;
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a0b, buf[0]);
-
- max_band60 = (int)((preview_VTS-4)/band_step60);
- buf[0] = (int8_t)max_band60;
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a0d, buf[0]);
-
- // 50Hz
- band_step50 = preview_sysclk * 100/preview_HTS; 
- buf[0] = (int8_t)(band_step50 >> 8);
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a08, buf[0]);
-buf[0] = (int8_t)(band_step50 & 0xff);
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a09, buf[0]);
-
- max_band50 = (int)((preview_VTS-4)/band_step50);
- buf[0] = (int8_t)max_band50;
- ov5640_i2c_write_b_sensor(s_ctrl,0x3a0e,buf[0]);
-}
-
-static long ov5640_hw_ae_transfer(struct msm_sensor_ctrl_t *s_ctrl)
-{
-    int rc = 0;
-   //calculate capture exp & gain
-   
-	 int preview_shutter, preview_gain16;
-	 int capture_gain16;
-	 int capture_sysclk, capture_HTS, capture_VTS;
-	 int light_frequency, capture_bandingfilter, capture_max_band;
-	 long int capture_gain16_shutter,capture_shutter;
-	 unsigned short average;
-	 preview_shutter = ov5640_preview_exposure;	 
-	 // read preview gain
-        preview_gain16 = ov5640_gain;
-	 printk("%s: preview_shutter=0x%x, preview_gain16=0x%x\n", __func__, preview_shutter, preview_gain16);
-	//ov5640_flash_auto_mode_flag_judge();
-	// read capture VTS
-	 capture_VTS = ov5640_get_VTS(s_ctrl);
-	 capture_HTS = ov5640_get_HTS(s_ctrl);
-	 capture_sysclk = ov5640_get_sysclk(s_ctrl);
-	 printk("%s: capture_VTS=0x%x, capture_HTS=0x%x, capture_sysclk=0x%x\n", __func__, capture_VTS, capture_HTS, capture_sysclk);
-
-	 // get average	  
-	 ov5640_i2c_read_byte(s_ctrl,0x56a1,&average);	 
-
-	 // calculate capture banding filter
-	 light_frequency = ov5640_get_light_frequency(s_ctrl);
-	 if (light_frequency == 60) {
-		 // 60Hz
-		 capture_bandingfilter = capture_sysclk * 100 / capture_HTS * 100 / 120;
-	 }
-	 else {
-		 // 50Hz
-		 capture_bandingfilter = capture_sysclk * 100 / capture_HTS;
-	 }
-	 capture_max_band = (int)((capture_VTS - 4)/capture_bandingfilter);
-	 printk("%s: light_frequency=0x%x, capture_bandingfilter=0x%x, capture_max_band=0x%x\n", __func__, light_frequency, capture_bandingfilter, capture_max_band);
-      #if 0
-	 // calculate capture shutter/gain16
-	 if (average > AE_low && average < AE_high) {
-		 // in stable range
-		 capture_shutter = preview_shutter * capture_sysclk/preview_sysclk * preview_HTS/capture_HTS * AE_Target / average;
-		//capture_gain16_shutter = preview_gain16 * preview_shutter /preview_sysclk * capture_sysclk /capture_HTS * preview_HTS * AE_Target / average;
-	 }
-	 else {
-		 capture_shutter = preview_shutter * capture_sysclk/preview_sysclk * preview_HTS/capture_HTS;
-		// capture_gain16_shutter = preview_gain16 * preview_shutter /preview_sysclk * capture_sysclk/capture_HTS* preview_HTS;
-	 }
-      #endif
-	  	 capture_shutter = preview_shutter * capture_sysclk/preview_sysclk * preview_HTS/capture_HTS;
-	        capture_gain16_shutter = preview_gain16 * capture_shutter;
-	  
-	 printk("%s:  preview_gain16=%d, preview_shutter=%d   capture_gain16_shutter=%ld\n", __func__, preview_gain16, preview_shutter,capture_gain16_shutter);
-	 printk("%s: capture_sysclk=%d, preview_sysclk=%d, preview_HTS=%d\n", __func__, capture_sysclk, preview_sysclk, preview_HTS);
-
-	 // gain to shutter
-	 if(capture_gain16_shutter < (capture_bandingfilter * 16)) {
-		 // shutter < 1/100
-		 capture_shutter = capture_gain16_shutter/16;
-		 if(capture_shutter <1)
-			 capture_shutter = 1;
-
-		 capture_gain16 = capture_gain16_shutter/capture_shutter;
-		 if(capture_gain16 < 16)
-			 capture_gain16 = 16;
-	 printk("shutter < 1/100\n");
-		 
-	 }
-	 else {
-		 if(capture_gain16_shutter > (capture_bandingfilter*capture_max_band*16)) {
-			 // exposure reach max
-			 capture_shutter = capture_bandingfilter*capture_max_band;
-			 capture_gain16 = capture_gain16_shutter / capture_shutter;
-			 	 printk(" exposure reach max\n");
-		 }
-		 else {
-			 // 1/100 < capture_shutter =< max, capture_shutter = n/100
-			 capture_shutter = ((int)(capture_gain16_shutter/16/capture_bandingfilter)) * capture_bandingfilter;
-			 capture_gain16 = capture_gain16_shutter / capture_shutter;
-			  printk("1/100 < capture_shutter =< max, capture_shutter = n/100\n");
-		 }
-	 }
-
-#if 0 // 主观测试版本 2011-12-21 ken
-        //kenxu add for reduce noise under dark condition
-        if(iCapture_Gain > 32) //gain > 2x, gain / 2, exposure * 2;
-        {
-          iCapture_Gain = iCapture_Gain / 2;
-          ulCapture_Exposure = ulCapture_Exposure * 2;
-        }
 #endif
-    printk("WB_T=%d\n", WB_T);
-    if(WB_T == 0X02)
-  	{
+/*[617001744332]modified by zhangzhao 2012-12-4 for camera flash*/
 
-	ov5640_i2c_write_table( s_ctrl, ov5640_lens_shading_D65_tbl, ARRAY_SIZE(ov5640_lens_shading_D65_tbl));
 
-  	}
-    else if (WB_T == 0X06)
-  	{
-	ov5640_i2c_write_table( s_ctrl, ov5640_lens_shading_A_tbl, ARRAY_SIZE(ov5640_lens_shading_A_tbl));
-
-  	}
-
-         printk("%s: capture_gain16=0x%x\n", __func__, capture_gain16);
-   // if (flash_led_enable == 0)
-    	{
-	    if(capture_gain16 > 48) //reach to max gain 16x, change blc to pass SNR test under low light
-         {  
-         printk("%s: YAVG=0x%x\n", __func__, YAVG);
-
-      	    if(YAVG <=15) //10lux
-      	 {
-      	  capture_shutter = capture_shutter * 2;
-          rc = ov5640_i2c_write_b_sensor(s_ctrl,0x4009, 0x50);
-          if (rc < 0)
-          {
-            return rc;
-          }
-      	}
-      	else if(YAVG <=23)//50lux
-        {
-          capture_shutter = capture_shutter * 4/3;
-          rc = ov5640_i2c_write_b_sensor(s_ctrl,0x4009, 0x30);
-          if (rc < 0)
-          {
-            return rc;
-          }
-        }            
-     }
-      	    printk("capture_shutter=%ld\n", capture_shutter);
-    	}
-
-	 // write capture gain
-	 ov5640_set_gain16(s_ctrl,capture_gain16);
-
-	// write capture shutter
-	if (capture_shutter > (capture_VTS - 4)) {
-	capture_VTS = capture_shutter + 4;
-	ov5640_set_VTS(s_ctrl,capture_VTS);
-	}
-	ov5640_set_shutter(s_ctrl,capture_shutter);  
-	mdelay(150);//150
-	return rc;
-}
-
-
-static long ov5640_hw_ae_parameter_record(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	int rc = 0;
-	//uint16_t UV, temp;
-	uint16_t ret_l,ret_m,ret_h, LencQ_H, LencQ_L;
-      pr_err("%s: entry\n", __func__);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x3503, 0x07);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x5196, 0x23); //freeze awb kenxu update @20120516
-
-	//================debug start========================
-	#if 0
-	ov5640_i2c_read_byte(s_ctrl,0x3c01, &temp);
-	pr_err("0x3c01=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3c00, &temp);
-	pr_err("0x3c00=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3a08, &temp);
-	pr_err("0x3a08=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3a09, &temp);
-	pr_err("0x3a09=0x%x\n", temp);
-
-	ov5640_i2c_read_byte(s_ctrl,0x3a0a, &temp);
-	pr_err("0x3a0a=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3a0b, &temp);
-	pr_err("0x3a0b=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3a0d, &temp);
-	pr_err("0x3a0d=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3a0e, &temp);
-	pr_err("0x3a0e=0x%x\n", temp);
-
-
-	ov5640_i2c_read_byte(s_ctrl,0x3034, &temp);
-	pr_err("0x3034=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3035, &temp);
-	pr_err("0x3035=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3036, &temp);
-	pr_err("0x3036=0x%xn", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3037, &temp);
-	pr_err("0x3037=0x%x\n", temp);
-
-
-	ov5640_i2c_read_byte(s_ctrl,0x3108, &temp);
-	pr_err("0x3108=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x3824, &temp);
-	pr_err("0x3824=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x460c, &temp);
-	pr_err("0x460c=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x300e, &temp);
-	pr_err("0x300e=0x%x\n", temp);
-
-
-	ov5640_i2c_read_byte(s_ctrl,0x380c, &temp);
-	pr_err("0x380c=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x380d, &temp);
-	pr_err("0x380d=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x380e, &temp);
-	pr_err("0x380e=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x380f, &temp);
-	pr_err("0x380f=0x%x\n", temp);
-
-
-	ov5640_i2c_read_byte(s_ctrl,0x5588, &temp);
-	pr_err("0x5588=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5583, &temp);
-	pr_err("0x5583=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5584, &temp);
-	pr_err("0x5584=0x%x\n", temp);
-
-	ov5640_i2c_read_byte(s_ctrl,0x5580, &temp);
-	pr_err("0x5580=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5001, &temp);
-	pr_err("0x5001=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x558c, &temp);
-	pr_err("0x558c=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5384, &temp);
-	pr_err("0x5384=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5385, &temp);
-	pr_err("0x5385=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5386, &temp);
-	pr_err("0x5386=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5387, &temp);
-	pr_err("0x5387=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5388, &temp);
-	pr_err("0x5388=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x5389, &temp);
-	pr_err("0x5389=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x538a, &temp);
-	pr_err("0x538a=0x%x\n", temp);
-	ov5640_i2c_read_byte(s_ctrl,0x538b, &temp);
-	pr_err("0x538b=0x%x\n", temp);
-       #endif
-	//================debug end========================
-
-    #if 0
-	//modify for preview abnormal in mono mode after snapshot  by lijing ZTE_CAM_LJ_20120627
-	if( zte_get_flash_current_state() )
-	{
-	if(CAMERA_EFFECT_OFF == zte_effect) {
-			uint16_t UV, temp;
-		//keep saturation same for preview and capture
-		pr_err("lijing:effect off \n");
-		ov5640_i2c_read_byte(s_ctrl,0x558c, &UV);
-		ov5640_i2c_read_byte(s_ctrl,0x5588, &temp);
-		temp = temp | 0x40;
-		ov5640_i2c_write_b_sensor(s_ctrl,0x5588, temp); //Manual UV
-		ov5640_i2c_write_b_sensor(s_ctrl,0x5583, UV);
-		ov5640_i2c_write_b_sensor(s_ctrl,0x5584, UV);
-		printk("preview_UV=%d\n", UV);
-	}
-	}
-    #endif
-
-	//keep Lenc same for preview and capture
-	ov5640_i2c_read_byte(s_ctrl,0x350a, &LencQ_H);
-	ov5640_i2c_read_byte(s_ctrl,0x350b, &LencQ_L);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x5054, LencQ_H);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x5055, LencQ_L);	
-	ov5640_i2c_write_b_sensor(s_ctrl,0x504d, 0x02);	//Manual mini Q	
-
-    //get preview exp & gain
-    ret_h = ret_m = ret_l = 0;
-    ov5640_preview_exposure = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x3500, &ret_h);
-    ov5640_i2c_read_byte(s_ctrl,0x3501, &ret_m);
-    ov5640_i2c_read_byte(s_ctrl,0x3502, &ret_l);
-    ov5640_preview_exposure = (ret_h << 12) + (ret_m << 4) + (ret_l >> 4);
-//    printk("preview_exposure=%d\n", ov5640_preview_exposure);
-
-    ret_h = ret_m = ret_l = 0;
-    ov5640_preview_maxlines = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x380e, &ret_h);
-    ov5640_i2c_read_byte(s_ctrl,0x380f, &ret_l);
-    ov5640_preview_maxlines = (ret_h << 8) + ret_l;
-//    printk("Preview_Maxlines=%d\n", ov5640_preview_maxlines);
-
-    //Read back AGC Gain for preview
-    ov5640_gain = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x350b, &ov5640_gain);
-//    printk("Gain,0x350b=0x%x\n", ov5640_gain);
-
-	YAVG = 0;
-	ov5640_i2c_read_byte(s_ctrl,0x56A1, &YAVG);
-	WB_T = 0;
-	ov5640_i2c_read_byte(s_ctrl,0x51d0, &WB_T);
-	pr_err("YAVG=0x%x\n", YAVG);
-	pr_err("WB_T=0x%x\n", WB_T);
-
- // read preview PCLK	 
- preview_sysclk = ov5640_get_sysclk(s_ctrl);	 
- // read preview HTS	 
- preview_HTS = ov5640_get_HTS(s_ctrl);
-	
-  #ifdef ZTE_FIX_WB_ENABLE
-	zte_flash_on_fix_wb();
-#endif
-
-	return rc;
-}
-
-
-static long ov5640_af_hw_ae_parameter_record(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	int rc = 0;
-	uint16_t ret_l,ret_m,ret_h, LencQ_H, LencQ_L;
-      pr_err("%s: entry\n", __func__);
-	//ov5640_i2c_write_b_sensor(s_ctrl,0x3503, 0x07);
-	//ov5640_i2c_write_b_sensor(s_ctrl,0x5196, 0x23); //freeze awb kenxu update @20120516
-
-	//keep Lenc same for preview and capture
-	ov5640_i2c_read_byte(s_ctrl,0x350a, &LencQ_H);
-	ov5640_i2c_read_byte(s_ctrl,0x350b, &LencQ_L);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x5054, LencQ_H);
-	ov5640_i2c_write_b_sensor(s_ctrl,0x5055, LencQ_L);	
-	ov5640_i2c_write_b_sensor(s_ctrl,0x504d, 0x02);	//Manual mini Q	
-
-    //get preview exp & gain
-    ret_h = ret_m = ret_l = 0;
-    ov5640_preview_exposure = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x3500, &ret_h);
-    ov5640_i2c_read_byte(s_ctrl,0x3501, &ret_m);
-    ov5640_i2c_read_byte(s_ctrl,0x3502, &ret_l);
-    ov5640_preview_exposure = (ret_h << 12) + (ret_m << 4) + (ret_l >> 4);
-
-    ret_h = ret_m = ret_l = 0;
-    ov5640_preview_maxlines = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x380e, &ret_h);
-    ov5640_i2c_read_byte(s_ctrl,0x380f, &ret_l);
-    ov5640_preview_maxlines = (ret_h << 8) + ret_l;
-
-    //Read back AGC Gain for preview
-    ov5640_gain = 0;
-    ov5640_i2c_read_byte(s_ctrl,0x350b, &ov5640_gain);
-
-	YAVG = 0;
-	ov5640_i2c_read_byte(s_ctrl,0x56A1, &YAVG);
-	WB_T = 0;
-	ov5640_i2c_read_byte(s_ctrl,0x51d0, &WB_T);
-	pr_err("YAVG=0x%x\n", YAVG);
-	pr_err("WB_T=0x%x\n", WB_T);
-
- // read preview PCLK	 
- preview_sysclk = ov5640_get_sysclk(s_ctrl);	 
- // read preview HTS	 
- preview_HTS = ov5640_get_HTS(s_ctrl);
-
-    //add for improve flash pic quality
-	ov5640_i2c_read_byte(s_ctrl,0x519f, &reg_0x3400);
-	ov5640_i2c_read_byte(s_ctrl,0x51a0, &reg_0x3401);
-	ov5640_i2c_read_byte(s_ctrl,0x51a1, &reg_0x3402);
-	ov5640_i2c_read_byte(s_ctrl,0x51a2, &reg_0x3403);
-	ov5640_i2c_read_byte(s_ctrl,0x51a3, &reg_0x3404);
-	ov5640_i2c_read_byte(s_ctrl,0x51a4, &reg_0x3405);
-
-	return rc;
-}
-
-/*
- * Auto Focus Trigger
- * WT_CAM_20110127 set af register to enable af function 
- */
- int32_t ov5640_af_trigger(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	int32_t rc=-EFAULT;
-	uint16_t af_ack=0x0002;
-	uint32_t i=0;
-
-	pr_err("%s: entry\n", __func__);
-
-	if(ov5640_TouchAF_x >= 0 && ov5640_TouchAF_y >= 0) 
-	{
-		//set to idle
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			goto done;
-		}
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n",__func__, rc);        
-			goto done;
-		}
-		//mdelay(15);
-		for (i = 0; (i < 100) && (0x0000 != af_ack); ++i)
-		{
-			af_ack = 0x0002;
-			mdelay(15);
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &af_ack, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			  pr_err("%s: rc < 0\n", __func__);
-			  goto done;
-			} 	
-			pr_err("Trig _1 Auto Focus  i  = %d ",i);
-		}
-		
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3024, (int)ov5640_TouchAF_x, MSM_CAMERA_I2C_BYTE_DATA);
-		pr_err("yanwei ov5640_TouchAF_x=%d,ov5640_TouchAF_y=%d\n", ov5640_TouchAF_x,ov5640_TouchAF_y);			
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			goto done;
-		}
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3025, (int)ov5640_TouchAF_y, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n",__func__, rc);        
-			goto done;
-		}
-
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			goto done;
-		}
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x0081, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n",__func__, rc);        
-			goto done;
-		}
-		af_ack = 2;
-		for (i = 0; (i < 100) && (0x0000 != af_ack); ++i)
-		{
-			mdelay(15);
-			af_ack = 0x0002;
-			rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &af_ack, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			pr_err("%s: rc < 0\n", __func__);
-			goto done;
-			} 		
-			pr_err("Trig _2 Auto Focus  i  = %d ",i);
-		}
-
-		//Use Trig Auto Focus command to start auto focus	
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			goto done;
-		}
-
-		rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x0003, MSM_CAMERA_I2C_BYTE_DATA);
-		if (rc < 0)
-		{
-			pr_err("%s: failed, rc=%d!\n",__func__, rc);        
-			goto done;
-		}
-
-	    rc = 0;
-	}
-
-	done:
-	ov5640_TouchAF_x = -1;
-	ov5640_TouchAF_y = -1;
-	return rc;
-}
-
-
-
-/*
- * ov5640_af_get
- * Get Focus state 
- */
- int32_t ov5640_af_get(struct msm_sensor_ctrl_t *s_ctrl,int8_t *af_status)
-{
-	int32_t rc=0;
-	uint16_t af_ack=0x0002;
-
-	rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x3023, &af_ack, MSM_CAMERA_I2C_BYTE_DATA);
-    *af_status = (int8_t)af_ack;
-
-	return rc;
-}
-
- int32_t ov5640_af_stop(struct msm_sensor_ctrl_t *s_ctrl)
-{
-    int32_t rc=0;
-	
-	if( s_ctrl->curr_mode != 3/*SENSOR_MODE_VIDEO*/)	 
-	{		 
-	    if( zte_get_flash_current_state() )		 
-		{		     
-		  pr_err("%s: zte_get_flash_current_state\n",__func__); 	         
-		  ov5640_af_hw_ae_parameter_record( s_ctrl);		 
-		}		 
-	}
-	
-	return rc;
-}
-
- int32_t ov5640_get_flash_mode(struct msm_sensor_ctrl_t *s_ctrl,int *flashmode)
-{
-
-	*flashmode = zte_get_flash_current_state();
-
-    pr_err("%s,flashmode:%d\n",__func__,*flashmode);
-	return 0;
-}
-
-int ov5640_preview_flash_gain_value( struct msm_sensor_ctrl_t *s_ctrl,
-		struct msm_sensor_v4l2_ctrl_info_t *ctrl_info, int value)
-{
-	int rc=0;
-    uint16_t g_preview_gain_flash;
-       
-    rc = msm_camera_i2c_read(s_ctrl->sensor_i2c_client, 0x350b, &g_preview_gain_flash, MSM_CAMERA_I2C_BYTE_DATA);
-    if (rc < 0)
-    {
-        return rc;
-    }
-
-	pr_err("%s: g_preview_gain_flash=0x%x \n", __func__,g_preview_gain_flash);
-	
-    if( g_preview_gain_flash >= 0xF0 )
-  	{
-       zte_flash_auto_flag_set_value(1);
-    }
-    else
-  	{
-  	   zte_flash_auto_flag_set_value(0);
-    }
-	return rc;
-}
-
-struct msm_sensor_v4l2_ctrl_info_t ov5640_v4l2_ctrl_info[] = {
-	{
-		.ctrl_id = V4L2_CID_AUTO_WHITE_BALANCE,
-		.min = MSM_V4L2_WB_AUTO,
-		.max = MSM_V4L2_WB_CLOUDY_DAYLIGHT,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_wb,
-	},
-	{
-		.ctrl_id = V4L2_CID_SPECIAL_EFFECT,
-		.min = MSM_V4L2_EFFECT_OFF,
-		.max = MSM_V4L2_EFFECT_NEGATIVE,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_effect,
-	},
-
-	{
-		.ctrl_id = V4L2_CID_CONTRAST,
-		.min = MSM_V4L2_CONTRAST_L0,
-		.max = MSM_V4L2_CONTRAST_L4,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_contrast,
-	},
-	{
-		.ctrl_id = V4L2_CID_SATURATION,
-		.min = MSM_V4L2_SATURATION_L0,
-		.max = MSM_V4L2_SATURATION_L4,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_saturation,
-	},
-	{
-		.ctrl_id = V4L2_CID_SHARPNESS,
-		.min = MSM_V4L2_SHARPNESS_L0,
-		.max = MSM_V4L2_SHARPNESS_L4,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_sharpness,
-	},
-	{
-		.ctrl_id = V4L2_CID_EXPOSURE,
-		.min = MSM_V4L2_EXPOSURE_N2,
-		.max = MSM_V4L2_EXPOSURE_P2,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_exposure_compensation,
-	},	
-	{
-		.ctrl_id = V4L2_CID_ISO,
-		.min = MSM_V4L2_ISO_AUTO,
-		.max = MSM_V4L2_ISO_800,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_iso,
-	},
-	{
-		.ctrl_id = V4L2_CID_TOUCH_AF_AE,
-		.min = 0,
-		.max = 1,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_touch_af_ae,
-	},
-	{
-		.ctrl_id = V4L2_CID_BRIGHTNESS,
-		.min = MSM_V4L2_BRIGHTNESS_L0,
-		.max = MSM_V4L2_BRIGHTNESS_L4,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_brightness,
-	},
-	{
-		.ctrl_id = V4L2_CID_TOUCH_AF_MODE,
-		.min = 0,
-		.max = 6,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_af_mode,
-	},
-	{
-		.ctrl_id = V4L2_CID_POWER_LINE_FREQUENCY,
-		.min = MSM_V4L2_POWER_LINE_OFF,
-		.max = MSM_V4L2_POWER_LINE_AUTO,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_set_antibanding,
-	},
-	{
-		.ctrl_id = V4L2_CID_GET_PREVIEW_FLASH_GAIN_VALUE,
-		.min = 0,
-		.max = 1,
-		.step = 1,
-		.s_v4l2_ctrl = ov5640_preview_flash_gain_value,
-	},
-};
-
-int32_t msm_ov5640_sensor_csi_setting(struct msm_sensor_ctrl_t *s_ctrl,
-			int update_type, int res)
-{
-
-	int32_t rc = 0;
-	uint16_t temp;
-	
-    pr_err("%s: E,update_type:%d,res:%d\n", __func__,update_type,res);
-	  
-    s_ctrl->func_tbl->sensor_stop_stream(s_ctrl);
-	if (update_type == MSM_SENSOR_REG_INIT) 
-	{
-
-		pr_err("%s: MSM_SENSOR_REG_INIT\n", __func__);
-		//msm_sensor_enable_debugfs(s_ctrl);
-		msleep(10);
-	    if( is_init == 0)
-        {
-		  pr_err("%s:  write_init_settings\n", __func__);
-          is_init =1 ;
-
-		  ov5640_i2c_write_table( s_ctrl, init_settings_array, ARRAY_SIZE(init_settings_array));
-		  msleep(5);
-		  ov5640_i2c_write_table( s_ctrl, autofocus_value, ARRAY_SIZE(autofocus_value));
-		  msleep(10);
-        }
-	} 
-	else if (update_type == MSM_SENSOR_UPDATE_PERIODIC) 
-	{
-	    if( res == 0)//snapshot
-        {
-			if( zte_get_flash_current_state() )
-			{
-			 pr_err("%s: zte_get_flash_current_state\n",__func__);
-			 ov5640_i2c_write_b_sensor(s_ctrl,0x3503, 0x07);
-			 ov5640_i2c_write_b_sensor(s_ctrl,0x5196, 0x23); //freeze awb kenxu update @20120516
-
-			 if( zte_awb == MSM_V4L2_WB_AUTO)
-			 {
-               ov5640_i2c_write_b_sensor(s_ctrl,0x3406, 0x01);
-			   ov5640_i2c_write_b_sensor(s_ctrl,0x3400, reg_0x3400);
-		       ov5640_i2c_write_b_sensor(s_ctrl,0x3401, reg_0x3401);
-		       ov5640_i2c_write_b_sensor(s_ctrl,0x3402, reg_0x3402);
-		       ov5640_i2c_write_b_sensor(s_ctrl,0x3403, reg_0x3403);
-		       ov5640_i2c_write_b_sensor(s_ctrl,0x3404, reg_0x3404);
-		       ov5640_i2c_write_b_sensor(s_ctrl,0x3405, reg_0x3405);
-			 }
-			}
-			else
-			{
-			 rc = ov5640_hw_ae_parameter_record( s_ctrl);
-			}
-			ov5640_i2c_write_table( s_ctrl, preview2snapshot_mode_array, ARRAY_SIZE(preview2snapshot_mode_array));
-			ov5640_hw_ae_transfer(s_ctrl);
-			pr_err("%s: goto snapshot mode\n", __func__);
-         }
-        else if( res == 1)//preview
-        {
-            pr_err("%s: goto preview mode\n", __func__);
-		    ov5640_i2c_write_table( s_ctrl, snapshot2preview_mode_array, ARRAY_SIZE(snapshot2preview_mode_array));
-		    msleep(5);
-
-		    ov5640_i2c_read_byte(s_ctrl,0x5588, &temp);
-		    temp = temp & 0xbf;
-		    ov5640_i2c_write_b_sensor(s_ctrl,0x5588, temp); //Auto UV
-	
-		    ov5640_set_bandingfilter(s_ctrl);
-			#if 0//no need to reset MCU after snapshot everytime
-            msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3000,0x0020,MSM_CAMERA_I2C_BYTE_DATA);  
-		    msleep(10);
-		    msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3000,0x0000,MSM_CAMERA_I2C_BYTE_DATA);
-            #endif
-			/* Exit from AF mode */
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3023, 0x0001, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			  pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			  return rc;
-			}
-			rc = msm_camera_i2c_write(s_ctrl->sensor_i2c_client, 0x3022, 0x0008, MSM_CAMERA_I2C_BYTE_DATA);
-			if (rc < 0)
-			{
-			  pr_err("%s: failed, rc=%d!\n", __func__, rc);
-			  return rc;
-			}
-            //ov5640_set_effect(s_ctrl,0,zte_effect);
-			zte_af_force_write = 1;
-			ov5640_set_af_mode(s_ctrl,0,zte_afmode);
-			zte_af_force_write = 0;
-        }
-	}
-	
-	s_ctrl->func_tbl->sensor_start_stream(s_ctrl);
-	msleep(10);
-	
-	pr_err("%s: X\n", __func__);
-	return rc;
-}
-
-
-int32_t msm_ov5640_sensor_setting(struct msm_sensor_ctrl_t *s_ctrl,
-			int update_type, int res)
-{
-	int32_t rc = 0;
-    pr_err("%s: E,update_type:%d,res:%d\n", __func__,update_type,res);
-	return rc;
-}
 
 static struct msm_sensor_fn_t ov5640_func_tbl = {
-	.sensor_start_stream = ov5640_start_stream,
-	.sensor_stop_stream = ov5640_stop_stream,
+	.sensor_start_stream = msm_sensor_start_stream,
+	.sensor_stop_stream = msm_sensor_stop_stream,
+	//.sensor_group_hold_on = msm_sensor_group_hold_on,
+	//.sensor_group_hold_off = msm_sensor_group_hold_off,
+	.sensor_set_fps = msm_sensor_set_fps,
+	//.sensor_write_exp_gain = ov5640_write_exp_gain,
+	//.sensor_write_snapshot_exp_gain = ov5640_write_exp_gain,
+	.sensor_csi_setting = ov5640_sensor_setting,////ECID:0000 zhangzhao 2012-6-25 add ev algorithm 
 	.sensor_set_sensor_mode = msm_sensor_set_sensor_mode,
 	.sensor_mode_init = msm_sensor_mode_init,
 	.sensor_get_output_info = msm_sensor_get_output_info,
 	.sensor_config = msm_sensor_config,
-	.sensor_power_up = msm_ov5640_sensor_power_up,
-	.sensor_power_down = msm_ov5640_sensor_power_down,
-	.sensor_csi_setting = msm_ov5640_sensor_csi_setting,
-	.sensor_setting = msm_ov5640_sensor_setting,
-	.af_trigger=ov5640_af_trigger,
-	.af_get=ov5640_af_get,
-	.af_stop=ov5640_af_stop,
-	.get_flashmode=ov5640_get_flash_mode,
+	//.sensor_open_init = ov5640_sensor_open_init,
+	//.sensor_release = ov5640_sensor_release,
+	.sensor_power_up = ov5640_sensor_power_up,//msm_sensor_power_up,
+	.sensor_power_down = ov5640_sensor_power_down,//msm_sensor_power_down,
+    .sensor_set_af_rect = ov5640_sensor_set_af_rect,// zte-modify, 20120831 fuyipeng modify for AF Rect
+	//.sensor_probe = msm_sensor_probe,
+	//.sensor_test =  msm_sensor_test,
+	.sensor_download_af_firmware = ov5640_download_af_firmware,//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+	.sensor_set_af_result = ov5640_sensor_cancel_af,//ECID:0000 2012-6-18 zhangzhao optimize the camera start up time start
+#ifdef CONFIG_PROJECT_P825B20	
+    	.sensor_flash_auto_state = ov5640_sensor_flash_auto_state,/*[617001744332]modified by zhangzhao 2012-12-4 for camera flash*/
+#endif    	
 };
 
 static struct msm_sensor_reg_t ov5640_regs = {
 	.default_data_type = MSM_CAMERA_I2C_BYTE_DATA,
-	 .start_stream_conf = ov5640_start_settings,
+	.start_stream_conf = ov5640_start_settings,
 	.start_stream_conf_size = ARRAY_SIZE(ov5640_start_settings),
 	.stop_stream_conf = ov5640_stop_settings,
 	.stop_stream_conf_size = ARRAY_SIZE(ov5640_stop_settings),
+	.group_hold_on_conf = ov5640_groupon_settings,
+	.group_hold_on_conf_size = ARRAY_SIZE(ov5640_groupon_settings),
+	.group_hold_off_conf = ov5640_groupoff_settings,
+	.group_hold_off_conf_size =
+		ARRAY_SIZE(ov5640_groupoff_settings),
 	.init_settings = &ov5640_init_conf[0],
 	.init_size = ARRAY_SIZE(ov5640_init_conf),
+
+	/* ZTEBSP yuxin add for ov5640 af FW download,2012.05.21 ++ */
+	.fw_download = &af_firmware_download[0],
+	.fw_size = ARRAY_SIZE(af_firmware_download),		
+	/* ZTEBSP yuxin add for ov5640 af FW download,2012.05.21 -- */
+	
 	.mode_settings = &ov5640_confs[0],
 	.output_settings = &ov5640_dimensions[0],
 	.num_conf = ARRAY_SIZE(ov5640_confs),
@@ -3706,12 +3783,15 @@ static struct msm_sensor_reg_t ov5640_regs = {
 
 static struct msm_sensor_ctrl_t ov5640_s_ctrl = {
 	.msm_sensor_reg = &ov5640_regs,
+	/*ZTEBSP yuxin add for setting effects 2012.05.25 ++*/
+	.msm_sensor_v4l2_ctrl_info = ov5640_v4l2_ctrl_info,   
+	.num_v4l2_ctrl = ARRAY_SIZE(ov5640_v4l2_ctrl_info), 
+	/*ZTEBSP yuxin add for setting effects 2012.05.25 --*/
 	.sensor_i2c_client = &ov5640_sensor_i2c_client,
 	.sensor_i2c_addr = 0x78,
-	.msm_sensor_v4l2_ctrl_info = ov5640_v4l2_ctrl_info,
-	.num_v4l2_ctrl = ARRAY_SIZE(ov5640_v4l2_ctrl_info),
 	.sensor_output_reg_addr = &ov5640_reg_addr,
 	.sensor_id_info = &ov5640_id_info,
+	.sensor_exp_gain_info =&ov5640_exp_gain_info,
 	.cam_mode = MSM_SENSOR_MODE_INVALID,
 	.csic_params = &ov5640_csi_params_array[0],
 	.msm_sensor_mutex = &ov5640_mut,
@@ -3720,10 +3800,11 @@ static struct msm_sensor_ctrl_t ov5640_s_ctrl = {
 	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(ov5640_subdev_info),
 	.sensor_v4l2_subdev_ops = &ov5640_subdev_ops,
 	.func_tbl = &ov5640_func_tbl,
-	.clk_rate = MSM_SENSOR_MCLK_24HZ,
-	.is_csic = 0,
+	.clk_rate = MSM_SENSOR_MCLK_24HZ,  
 };
 
 module_init(msm_sensor_init_module);
-MODULE_DESCRIPTION("Omnivision VGA YUV sensor driver");
+MODULE_DESCRIPTION("Omnivision 5MP YUV sensor driver");
 MODULE_LICENSE("GPL v2");
+
+
