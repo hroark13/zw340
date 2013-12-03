@@ -615,7 +615,7 @@ DEFINE_SIMPLE_ATTRIBUTE(dbg_addr_fops, addr_get, addr_set, "0x%03llX\n");
 static int __devinit marimba_dbg_init(int adie_type)
 {
 	struct adie_dbg_device *dbgdev;
-	struct dentry *dent = NULL;
+	struct dentry *dent;
 	struct dentry *temp;
 
 	dbgdev = kzalloc(sizeof *dbgdev, GFP_KERNEL);
@@ -808,6 +808,13 @@ static int __devinit marimba_probe(struct i2c_client *client,
 
 	rc = get_adie_type();
 
+/*[ECID:0000] ZTEBSP wangbing, for bt hard reset debug +++*/
+#if defined ( CONFIG_PROJECT_P825A10 ) || defined ( CONFIG_PROJECT_P825F01 ) || defined ( CONFIG_PROJECT_P865F01 ) || defined ( CONFIG_PROJECT_P865V30 ) ||defined ( CONFIG_PROJECT_P865V20)
+	printk("%s adie_type %d, and will set to 2\n", __func__, rc);
+	rc = 2;
+	cur_adie_type = BAHAMA_ID;
+#endif	
+/*[ECID:0000] ZTEBSP wangbing, for bt hard reset debug ---*/
 	if (rc < 0) {
 		if (pdata->bahama_setup != NULL)
 			pdata->bahama_shutdown(cur_adie_type);
