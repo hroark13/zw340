@@ -106,7 +106,7 @@ static void led_lc_set(struct pmic8058_led_data *led, enum led_brightness value)
 	tmp &= ~PM8058_DRV_LED_CTRL_MASK;
 	tmp |= level;
 	spin_unlock_irqrestore(&led->value_lock, flags);
-	pr_info("led_lc_set tmp=%d\n",tmp);	
+
 	rc = pm8xxx_writeb(led->dev->parent, SSBI_REG_ADDR_LED_CTRL(offset),
 								tmp);
 	if (rc) {
@@ -244,7 +244,6 @@ static void pmic8058_led_set(struct led_classdev *led_cdev,
 
 	spin_lock_irqsave(&led->value_lock, flags);
 	led->brightness = value;
-	pr_info("pmic8058_led_set value=%d\n",value);
 	schedule_work(&led->work);
 	spin_unlock_irqrestore(&led->value_lock, flags);
 }
