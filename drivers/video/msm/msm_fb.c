@@ -3761,6 +3761,7 @@ EXPORT_SYMBOL(msm_fb_writeback_terminate);
 #endif
 
 
+//ZTE_LCD_LHT_20100622_001 start
 static int msm_lcd_read_proc(
         char *page, char **start, off_t off, int count, int *eof, void *data)
 {
@@ -3817,10 +3818,19 @@ static int msm_lcd_read_proc(
 			//len = sprintf(page, "%s\n","40");
 			break;	
 		case LCD_PANEL_4P3_NT35510:
-			strcpy(module_name,"60");
+			strcpy(module_name,"60");//ZTE_LCD_LKEJ_20110225_001
 			break;
 		case LCD_PANEL_4P3_HX8369A:
 			strcpy(module_name,"61");
+			break;
+		case LCD_PANEL_4P3_RM68120_LEAD:
+			strcpy(module_name,"zteLEAD(RM68120)_WVGA_4.3Inch");
+			break;
+		case LCD_PANEL_4P3_HX8369A_TM:
+			strcpy(module_name,"zteTM4.3WVGA480*800");
+			break;	
+		case LCD_PANEL_4P3_NT35510_2:
+			strcpy(module_name,"zteBOE4.3WVGA480*800");
 			break;
 		case LCD_PANEL_3P8_NT35510_1:
 			strcpy(module_name,"70");
@@ -3850,31 +3860,6 @@ static int msm_lcd_read_proc(
 			strcpy(module_name,"100");
 			//len = sprintf(page, "%s\n","40");
 			break;	
-		case LCD_PANEL_3P5_R61529:
-			strcpy(module_name,"zteLEAD(R61529+LG)_320*480_3.5Inch");
-			break;	
-		case LCD_PANEL_4P3_NT35516_TRULY:
-			strcpy(module_name,"zteTRULY(NT35516+LG)_540*960_4.0Inch");
-			break;	
-		case LCD_PANEL_4P3_NT35516_AUO:
-			strcpy(module_name,"zteLEAD(NT35516+AUO)_540*960_4.0Inch");
-			break;
-		case LCD_PANEL_4P3_OTM9608A_BOE:
-			strcpy(module_name,"zteBOE(OTM9608A)_540*960_4.3Inch");
-			break;
-		//lixuetao add for P856S30 panel
-		case LCD_PANEL_4P_OTM8009_CMI:
-			strcpy(module_name,"zteLEAD(OTM8009+CMI)_480*800_4.0Inch");
-			break;	
-		case LCD_PANEL_4P_R61408e_LG:
-			strcpy(module_name,"zteTRULY(R61408+LG)_480*800_4.0Inch");
-			break;
-		case LCD_PANEL_4P_HX8369A_LG:
-			strcpy(module_name,"zteLEAD(HX8369a+LG)_480*800_4.0Inch");
-			break;
-		//lixuetao code end
-			
-			
 		default:
 			strcpy(module_name,"0");
 			//len = sprintf(page, "%s\n","0");
