@@ -209,8 +209,12 @@ void msm_restart(char mode, const char *cmd)
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			code = simple_strtoul(cmd + 4, NULL, 16) & 0xff;
-			__raw_writel(0x6f656d00 | code, restart_reason);
-		} else {
+			__raw_writel(0x6f656d00 | code, restart_reason);			
+		/* ZTE huangyz 20121025, add FTM reboot reason, start */
+		} else if(!strncmp(cmd, "ftmmode", 7)) {
+		    __raw_writel(0x77665504, restart_reason);
+		/* ZTE huangyz 20121025, add FTM reboot reason, end */		
+		}	else {
 			__raw_writel(0x77665501, restart_reason);
 		}
 	}

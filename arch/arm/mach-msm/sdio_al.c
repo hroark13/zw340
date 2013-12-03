@@ -577,7 +577,7 @@ static int sdio_al_debugfs_init(void)
 
 	sdio_al->debug.sdio_al_debug_close_on = debugfs_create_u8(
 					"debug_close_on",
-					S_IRUGO | S_IWUGO,
+					S_IRUGO | S_IWUSR,
 					sdio_al->debug.sdio_al_debug_root,
 					&sdio_al->debug.debug_close_on);
 
@@ -594,14 +594,14 @@ static int sdio_al_debugfs_init(void)
 		scnprintf(temp, 18, "sdio_al_log_dev_%d", i + 1);
 		sdio_al->debug.sdio_al_debug_log_buffers[i] =
 			debugfs_create_blob(temp,
-					S_IRUGO | S_IWUGO,
+					S_IRUGO | S_IWUSR,
 					sdio_al->debug.sdio_al_debug_root,
 					&sdio_al_dbgfs_log[i]);
 	}
 
 	sdio_al->debug.sdio_al_debug_log_buffers[MAX_NUM_OF_SDIO_DEVICES] =
 			debugfs_create_blob("sdio_al_gen_log",
-				S_IRUGO | S_IWUGO,
+				S_IRUGO | S_IWUSR,
 				sdio_al->debug.sdio_al_debug_root,
 				&sdio_al_dbgfs_log[MAX_NUM_OF_SDIO_DEVICES]);
 

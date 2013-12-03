@@ -925,16 +925,15 @@ void smd_channel_reset(uint32_t restart_pid)
 	unsigned long flags;
 
 	SMD_DBG("%s: starting reset\n", __func__);
-
-	/* release any held spinlocks */
-	remote_spin_release(&remote_spinlock, restart_pid);
-	remote_spin_release_all(restart_pid);
-
 	shared = smem_find(ID_CH_ALLOC_TBL, sizeof(*shared) * 64);
 	if (!shared) {
 		pr_err("%s: allocation table not initialized\n", __func__);
 		return;
 	}
+
+	/* release any held spinlocks */
+	remote_spin_release(&remote_spinlock, restart_pid);
+	remote_spin_release_all(restart_pid);
 
 	/* reset SMSM entry */
 	if (smsm_info.state) {
@@ -1157,9 +1156,18 @@ static void ch_set_state(struct smd_channel *ch, unsigned n)
 		ch->half_ch->set_fCTS(ch->send, 1);
 		ch->half_ch->set_fCD(ch->send, 1);
 	} else {
+	//zte-modify, duhongwei10087808, 2012.08.15,after encrypt,phone can't find network, begin
+		if (strncmp("DATA5", ch->name, 5)
+			&& strncmp("DATA6", ch->name, 5)
+			&& strncmp("DATA7", ch->name, 5))
+		{
 		ch->half_ch->set_fDSR(ch->send, 0);
 		ch->half_ch->set_fCTS(ch->send, 0);
 		ch->half_ch->set_fCD(ch->send, 0);
+	//	pr_err("!!! SMD drop DTR [%s] from %d %s\n", ch->name, current->pid, current->comm);
+	    }
+	//  pr_err("!!! SMD drop discard DTR [%s] from %d %s\n", ch->name, current->pid, current->comm);
+	//zte-modify, duhongwei10087808, 2012.08.15,after encrypt,phone can't find network,end
 	}
 	ch->half_ch->set_state(ch->send, n);
 	ch->half_ch->set_fSTATE(ch->send, 1);

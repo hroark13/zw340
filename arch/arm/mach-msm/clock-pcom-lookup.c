@@ -321,7 +321,16 @@ static struct clk_lookup msm_cmn_clk_7625a_7627a[] __initdata = {
 	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-0010"),
 	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-0078"),
 	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-006c"),
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-003c"),	////ECID:0000 zhangzhao 2012-4-23 modified for 5640
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-002d"),	////ECID:0000 zhangzhao 2012-4-23 modified for  s5k5ca
 	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-000d"),
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-001e"),	//ECID:0000 zhangzhao 2012-4-23 modified for camera tosiba
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-0030"),     //ZTEBSP yuxin add for ov2675 2012.10.22
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-003d"),     //ZTEBSP yuxin add for sp0a28 2012.10.23
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"0-0020"),     //ZTEBSP yuxin add for Hi542 2012.06.09
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"1-007a"),	//ECID:0000 zhangzhao 2012-12-1 modified for camera mt9d115 for v72a
+	CLK_LOOKUP("cam_clk",		cam_m_clk.c,	"1-003d"),     //ZTEBSP weiguohua  add for sp0a28 2012.10.23
+
 	CLK_LOOKUP("csi_clk",		csi0_clk.c,	"msm_camera_ov9726.0"),
 	CLK_LOOKUP("csi_pclk",		csi0_p_clk.c,	"msm_camera_ov9726.0"),
 	CLK_LOOKUP("csi_vfe_clk",	csi0_vfe_clk.c,	"msm_camera_ov9726.0"),
@@ -378,6 +387,11 @@ static struct clk_lookup msm_cmn_clk_7625a_7627a[] __initdata = {
 	CLK_LOOKUP("iface_clk",		tsif_p_clk.c,	"msm_tsif.0"),
 	CLK_LOOKUP("core_clk",		uart1_clk.c,	"msm_serial.0"),
 	CLK_LOOKUP("core_clk",		uart2_clk.c,	"msm_serial.1"),
+#ifdef CONFIG_ZTE_UART_USE_PORT3
+        //[ECID:000000] ZTEBSP zhangqi for  utart debug 20111215 start
+	CLK_LOOKUP("core_clk",		uart3_clk.c,	"msm_serial.2"),
+        //[ECID:000000] ZTEBSP zhangqi for  utart debug 20111215 end
+#endif
 	CLK_LOOKUP("core_clk",		uart1dm_clk.c,	"msm_serial_hs.0"),
 	CLK_LOOKUP("core_clk",		uart2dm_clk.c,	"msm_serial_hsl.0"),
 	CLK_LOOKUP("core_clk",		usb_hs_core_clk.c, "msm_otg"),
