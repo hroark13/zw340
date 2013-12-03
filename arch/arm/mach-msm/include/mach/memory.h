@@ -42,44 +42,17 @@
 
 #define EBI0_PHYS_OFFSET PHYS_OFFSET
 #define EBI0_PAGE_OFFSET PAGE_OFFSET
-#if defined(CONFIG_ZTE_3_CHANNEL_6G_DDR_CFG1)
 #define EBI0_SIZE 0x10000000
-#else
-#define EBI0_SIZE 0x20000000
-#endif
 
 #ifndef __ASSEMBLY__
 
 extern unsigned long ebi1_phys_offset;
 
-#if defined(CONFIG_ZTE_3_CHANNEL_6G_DDR_CFG1)
-#define EBI0_CS1_SIZE 0x10000000 
-#define EBI0_CS1_PHYS_OFFSET 0x20000000
-#define EBI0_CS1_PAGE_OFFSET (EBI0_PAGE_OFFSET + EBI0_SIZE)
-
-#define EBI1_PHYS_OFFSET 0x40000000 // ebi1_phys_offset?
-#define EBI1_PAGE_OFFSET (EBI0_PAGE_OFFSET + EBI0_SIZE + EBI0_CS1_SIZE)
-#else
 #define EBI1_PHYS_OFFSET (ebi1_phys_offset)
 #define EBI1_PAGE_OFFSET (EBI0_PAGE_OFFSET + EBI0_SIZE)
-#endif // CONFIG_ZTE_3_CHANNEL_6G_DDR_CFG1
 
 #if (defined(CONFIG_SPARSEMEM) && defined(CONFIG_VMSPLIT_3G))
-#if defined(CONFIG_ZTE_3_CHANNEL_6G_DDR_CFG1)
-#define __phys_to_virt(phys)				\
-	((phys) >= EBI1_PHYS_OFFSET ?			\
-	(phys) - EBI1_PHYS_OFFSET + EBI1_PAGE_OFFSET :	\
-	((phys) >= EBI0_CS1_PHYS_OFFSET ?			\
-	(phys) - EBI0_CS1_PHYS_OFFSET + EBI0_CS1_PAGE_OFFSET :	\
-	(phys) - EBI0_PHYS_OFFSET + EBI0_PAGE_OFFSET))
 
-#define __virt_to_phys(virt)				\
-	((virt) >= EBI1_PAGE_OFFSET ?			\
-	(virt) - EBI1_PAGE_OFFSET + EBI1_PHYS_OFFSET :	\
-	((virt) >= EBI0_CS1_PAGE_OFFSET ?			\
-	(virt) - EBI0_CS1_PAGE_OFFSET + EBI0_CS1_PHYS_OFFSET :	\
-	(virt) - EBI0_PAGE_OFFSET + EBI0_PHYS_OFFSET))
-#else
 #define __phys_to_virt(phys)				\
 	((phys) >= EBI1_PHYS_OFFSET ?			\
 	(phys) - EBI1_PHYS_OFFSET + EBI1_PAGE_OFFSET :	\
@@ -90,7 +63,6 @@ extern unsigned long ebi1_phys_offset;
 	(virt) - EBI1_PAGE_OFFSET + EBI1_PHYS_OFFSET :	\
 	(virt) - EBI0_PAGE_OFFSET + EBI0_PHYS_OFFSET)
 
-#endif // CONFIG_ZTE_3_CHANNEL_6G_DDR_CFG1
 #endif
 #endif
 

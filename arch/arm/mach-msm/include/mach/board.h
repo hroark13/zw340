@@ -121,10 +121,15 @@ struct msm_camera_sensor_flash_current_driver {
 	const struct pmic8058_leds_platform_data *driver_channel;
 };
 
+/* [ECID:000000] ZTEBSP wangjianping, 20121106 added for camera flash LM3462, start */
 enum msm_camera_ext_led_flash_id {
 	MAM_CAMERA_EXT_LED_FLASH_SC628A,
 	MAM_CAMERA_EXT_LED_FLASH_TPS61310,
+/*[ECID:000000] ZTEBSP wangbing, for adp1655 flash driver, 20120629 */
+	MAM_CAMERA_EXT_LED_FLASH_ADP1655,
+	MAM_CAMERA_EXT_LED_FLASH_LM3642,	
 };
+/* [ECID:000000] ZTEBSP wangjianping, 20121106 added for camera flash LM3462, end */
 
 struct msm_camera_sensor_flash_external {
 	uint32_t led_en;
@@ -276,6 +281,7 @@ struct msm_camera_sensor_info {
 	int sensor_pwd;
 	int vcm_pwd;
 	int vcm_enable;
+	int power_moto_gpio;//zhangzhao modified for mecnex sensor moto power
 	int mclk;
 	int flash_type;
 	struct msm_camera_sensor_platform_info *sensor_platform_info;
@@ -292,6 +298,7 @@ struct msm_camera_sensor_info {
 	struct msm_actuator_info *actuator_info;
 	int pmic_gpio_enable;
 	struct msm_eeprom_info *eeprom_info;
+    uint8_t autofocus_info; //zte-modify jixd 20121212 add for back camera not support auto focus
 };
 
 struct msm_camera_board_info {
@@ -532,6 +539,7 @@ struct msm_i2c_platform_data {
 	int aux_dat;
 	int src_clk_rate;
 	int use_gsbi_shared_mode;
+	int keep_ahb_clk_on;
 	void (*msm_i2c_config_gpio)(int iface, int config_type);
 };
 

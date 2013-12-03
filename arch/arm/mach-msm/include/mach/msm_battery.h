@@ -27,25 +27,4 @@ struct msm_psy_batt_pdata {
 	u32 (*calculate_capacity)(u32 voltage);
 };
 
-//YINTIANCI_BAT_20101101 begin
-struct __attribute__((packed)) smem_batt_chg_t
-{
-	u8 charger_type;
-	u8 charger_status;
-	u8 charging;
-	u8 chg_fulled;
-	u8 battery_status;
-	u8 battery_level;
-	u16 battery_voltage;
-	s16 battery_temp;
-	u8 battery_capacity;
-			
-	u8 curr_capacity;	
-	u8 curr_temp;
-	u8 temp_data;
-	u16 curr_voltage;
-};
-
-//YINTIANCI_BAT_20101101 end
-
 #endif
