@@ -35,8 +35,6 @@
 #define POOL_TYPE_COPY		1
 #define POOL_TYPE_HDLC		2
 #define POOL_TYPE_WRITE_STRUCT	4
-#define POOL_TYPE_HSIC		8
-#define POOL_TYPE_HSIC_WRITE	16
 #define POOL_TYPE_ALL		7
 #define MODEM_DATA 		1
 #define QDSP_DATA  		2
@@ -59,11 +57,6 @@
 #define DIAG_CTRL_MSG_EVENT_MASK	10
 #define DIAG_CTRL_MSG_F3_MASK	11
 #define CONTROL_CHAR	0x7E
-
-#define DIAG_CON_APSS (0x0001)	/* Bit mask for APSS */
-#define DIAG_CON_MPSS (0x0002)	/* Bit mask for MPSS */
-#define DIAG_CON_LPASS (0x0004)	/* Bit mask for LPASS */
-#define DIAG_CON_WCNSS (0x0008)	/* Bit mask for WCNSS */
 
 /* Maximum number of pkt reg supported at initialization*/
 extern unsigned int diag_max_reg;
@@ -231,9 +224,6 @@ struct diagchar_dev {
 	struct work_struct diag_qdsp_mask_update_work;
 	struct work_struct diag_wcnss_mask_update_work;
 	struct work_struct diag_read_smd_dci_work;
-	struct work_struct diag_clean_modem_reg_work;
-	struct work_struct diag_clean_lpass_reg_work;
-	struct work_struct diag_clean_wcnss_reg_work;
 	uint8_t *msg_masks;
 	uint8_t *log_masks;
 	int log_masks_length;
@@ -273,19 +263,20 @@ struct diagchar_dev {
 	unsigned char *buf_in_smux;
 	int in_busy_smux;
 	int diag_smux_enabled;
-	struct diag_request *write_ptr_mdm;
 	/* HSIC variables */
+	unsigned char *buf_in_hsic;
 	int hsic_ch;
 	int hsic_device_enabled;
 	int hsic_device_opened;
 	int hsic_suspend;
 	int in_busy_hsic_read_on_device;
+	int in_busy_hsic_write_on_device;
 	int in_busy_hsic_write;
+	int in_busy_hsic_read;
 	struct work_struct diag_read_hsic_work;
 	/* USB MDM channel variables */
 	int usb_mdm_connected;
 	int read_len_mdm;
-	int write_len_mdm;
 	unsigned char *usb_buf_mdm_out;
 	struct usb_diag_ch *mdm_ch;
 	struct workqueue_struct *diag_bridge_wq;
@@ -293,16 +284,7 @@ struct diagchar_dev {
 	struct work_struct diag_disconnect_work;
 	struct work_struct diag_usb_read_complete_work;
 	struct diag_request *usb_read_mdm_ptr;
-	int count_hsic_pool;
-	int count_hsic_write_pool;
-	unsigned int poolsize_hsic;
-	unsigned int poolsize_hsic_write;
-	unsigned int itemsize_hsic;
-	unsigned int itemsize_hsic_write;
-	mempool_t *diag_hsic_pool;
-	mempool_t *diag_hsic_write_pool;
-	int num_hsic_buf_tbl_entries;
-	struct diag_write_device *hsic_buf_tbl;
+	struct diag_request *write_ptr_mdm;
 #endif
 };
 

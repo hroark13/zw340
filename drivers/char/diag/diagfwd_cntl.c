@@ -20,33 +20,8 @@
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
 #endif
-/* tracks which peripheral is undergoing SSR */
-static uint16_t reg_dirty;
+
 #define HDR_SIZ 8
-
-void diag_clean_modem_reg_fn(struct work_struct *work)
-{
-	pr_debug("diag: clean modem registration\n");
-	reg_dirty |= DIAG_CON_MPSS;
-	diag_clear_reg(MODEM_PROC);
-	reg_dirty ^= DIAG_CON_MPSS;
-}
-
-void diag_clean_lpass_reg_fn(struct work_struct *work)
-{
-	pr_debug("diag: clean lpass registration\n");
-	reg_dirty |= DIAG_CON_LPASS;
-	diag_clear_reg(QDSP_PROC);
-	reg_dirty ^= DIAG_CON_LPASS;
-}
-
-void diag_clean_wcnss_reg_fn(struct work_struct *work)
-{
-	pr_debug("diag: clean wcnss registration\n");
-	reg_dirty |= DIAG_CON_WCNSS;
-	diag_clear_reg(WCNSS_PROC);
-	reg_dirty ^= DIAG_CON_WCNSS;
-}
 
 void diag_smd_cntl_notify(void *ctxt, unsigned event)
 {
@@ -130,8 +105,6 @@ static void diag_smd_cntl_send_req(int proc_num)
 	struct bindpkt_params *temp;
 	void *buf = NULL;
 	smd_channel_t *smd_ch = NULL;
-	/* tracks which peripheral is sending registration */
-	uint16_t reg_mask = 0;
 
 	if (pkt_params == NULL) {
 		pr_alert("diag: Memory allocation failure\n");
@@ -141,15 +114,12 @@ static void diag_smd_cntl_send_req(int proc_num)
 	if (proc_num == MODEM_PROC) {
 		buf = driver->buf_in_cntl;
 		smd_ch = driver->ch_cntl;
-		reg_mask = DIAG_CON_MPSS;
 	} else if (proc_num == QDSP_PROC) {
 		buf = driver->buf_in_qdsp_cntl;
 		smd_ch = driver->chqdsp_cntl;
-		reg_mask = DIAG_CON_LPASS;
 	} else if (proc_num == WCNSS_PROC) {
 		buf = driver->buf_in_wcnss_cntl;
 		smd_ch = driver->ch_wcnss_cntl;
-		reg_mask = DIAG_CON_WCNSS;
 	}
 
 	if (!smd_ch || !buf) {
@@ -210,16 +180,8 @@ static void diag_smd_cntl_send_req(int proc_num)
 				temp -= pkt_params->count;
 				pkt_params->params = temp;
 				flag = 1;
-				/* peripheral undergoing SSR should not
-				 * record new registration
-				 */
-				if (!(reg_dirty & reg_mask))
-					diagchar_ioctl(NULL,
-					 DIAG_IOCTL_COMMAND_REG, (unsigned long)
-								pkt_params);
-				else
-					pr_err("diag: drop reg proc %d\n",
-								 proc_num);
+				diagchar_ioctl(NULL, DIAG_IOCTL_COMMAND_REG,
+						 (unsigned long)pkt_params);
 				kfree(temp);
 			}
 			buf = buf + HDR_SIZ + data_len;
@@ -313,7 +275,6 @@ static struct platform_driver diag_smd_lite_cntl_driver = {
 
 void diagfwd_cntl_init(void)
 {
-	reg_dirty = 0;
 	driver->polling_reg_flag = 0;
 	driver->diag_cntl_wq = create_singlethread_workqueue("diag_cntl_wq");
 	if (driver->buf_in_cntl == NULL) {
@@ -401,8 +362,7 @@ static ssize_t diag_dbgfs_read_status(struct file *file, char __user *ubuf,
 		"in_busy_qdsp_2: %d\n"
 		"in_busy_wcnss_1: %d\n"
 		"in_busy_wcnss_2: %d\n"
-		"in_busy_dci: %d\n"
-		"logging_mode: %d\n",
+		"in_busy_dci: %d\n",
 		(unsigned int)driver->ch,
 		(unsigned int)driver->chqdsp,
 		(unsigned int)driver->ch_wcnss,
@@ -422,8 +382,7 @@ static ssize_t diag_dbgfs_read_status(struct file *file, char __user *ubuf,
 		driver->in_busy_qdsp_2,
 		driver->in_busy_wcnss_1,
 		driver->in_busy_wcnss_2,
-		driver->in_busy_dci,
-		driver->logging_mode);
+		driver->in_busy_dci);
 
 #ifdef CONFIG_DIAG_OVER_USB
 	ret += scnprintf(buf+ret, DEBUG_BUF_SIZE,
@@ -543,7 +502,7 @@ static ssize_t diag_dbgfs_read_table(struct file *file, char __user *ubuf,
 	return ret;
 }
 
-#ifdef CONFIG_DIAG_BRIDGE_CODE
+#ifdef CONFIG_DIAG_HSIC_PIPE
 static ssize_t diag_dbgfs_read_hsic(struct file *file, char __user *ubuf,
 				    size_t count, loff_t *ppos)
 {
@@ -557,35 +516,29 @@ static ssize_t diag_dbgfs_read_hsic(struct file *file, char __user *ubuf,
 	}
 
 	ret = scnprintf(buf, DEBUG_BUF_SIZE,
+		"hsic initialized: %d\n"
 		"hsic ch: %d\n"
 		"hsic enabled: %d\n"
 		"hsic_opened: %d\n"
-		"hsic_suspend: %d\n"
-		"in_busy_hsic_read_on_device: %d\n"
+		"hisc_suspend: %d\n"
+		"in_busy_hsic_read_on_mdm: %d\n"
+		"in_busy_hsic_write_on_mdm: %d\n"
 		"in_busy_hsic_write: %d\n"
-		"count_hsic_pool: %d\n"
-		"count_hsic_write_pool: %d\n"
-		"diag_hsic_pool: %x\n"
-		"diag_hsic_write_pool: %x\n"
-		"write_len_mdm: %d\n"
-		"num_hsic_buf_tbl_entries: %d\n"
+		"in_busy_hsic_read: %d\n"
 		"usb_mdm_connected: %d\n"
 		"diag_read_mdm_work: %d\n"
 		"diag_read_hsic_work: %d\n"
 		"diag_disconnect_work: %d\n"
 		"diag_usb_read_complete_work: %d\n",
+		driver->hsic_initialized,
 		driver->hsic_ch,
 		driver->hsic_device_enabled,
 		driver->hsic_device_opened,
 		driver->hsic_suspend,
 		driver->in_busy_hsic_read_on_device,
+		driver->in_busy_hsic_write_on_device,
 		driver->in_busy_hsic_write,
-		driver->count_hsic_pool,
-		driver->count_hsic_write_pool,
-		(unsigned int)driver->diag_hsic_pool,
-		(unsigned int)driver->diag_hsic_write_pool,
-		driver->write_len_mdm,
-		driver->num_hsic_buf_tbl_entries,
+		driver->in_busy_hsic_read,
 		driver->usb_mdm_connected,
 		work_pending(&(driver->diag_read_mdm_work)),
 		work_pending(&(driver->diag_read_hsic_work)),
@@ -630,7 +583,7 @@ void diag_debugfs_init(void)
 	debugfs_create_file("work_pending", 0444, diag_dbgfs_dent, 0,
 		&diag_dbgfs_workpending_ops);
 
-#ifdef CONFIG_DIAG_BRIDGE_CODE
+#ifdef CONFIG_DIAG_HSIC_PIPE
 	debugfs_create_file("hsic", 0444, diag_dbgfs_dent, 0,
 		&diag_dbgfs_hsic_ops);
 #endif
