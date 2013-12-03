@@ -710,24 +710,3 @@ config MMC_USHC
 
 	  Note: These controllers only support SDIO cards and do not
 	  support MMC or SD memory cards.
-
-config ATH_WIFI
-	bool "SDIO suspend and resume method for atheros wifi"
-	depends on MMC_MSM
-	default n
-	help
-	  Enable Atheros SDIO wifi suspend resume function
-
-config WOW_BY_SDIO_DATA1
-	bool "wakeup by sdio data1"
-	depends on ATH_WIFI 
-	default n
-	help
-	  Select Y to use sdio data1 to wakeup arm11 otherwise by external WOW_GPIO pin 
-
-config BCM_WIFI
-	bool "SDIO suspend and resume method for broadcomm wifi"
-	depends on MMC_MSM
-	default n
-	help
-	  Enable Broadcomm SDIO wifi suspend resume function

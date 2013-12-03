@@ -123,8 +123,6 @@ struct mmc_blk_data {
 	struct device_attribute num_wr_reqs_to_start_packing;
 };
 
-void power_off_on_host(struct mmc_host *host);
-
 static DEFINE_MUTEX(open_lock);
 
 enum {
@@ -1056,9 +1054,6 @@ static inline void mmc_apply_rel_rw(struct mmc_blk_request *brq,
 	 R1_CC_ERROR |		/* Card controller error */		\
 	 R1_ERROR)		/* General/unknown error */
 
-//ruanmeisi_20100618	
-int sd_in_programm_state = 0;
-
 static int mmc_blk_err_check(struct mmc_card *card,
 			     struct mmc_async_req *areq)
 {
@@ -1110,7 +1105,6 @@ static int mmc_blk_err_check(struct mmc_card *card,
 	 */
 	if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
 		u32 status;
-        unsigned long last_jiffies = jiffies;
 		do {
 			int err = get_card_status(card, &status, 5);
 			if (err) {
@@ -1123,15 +1117,6 @@ static int mmc_blk_err_check(struct mmc_card *card,
 			 * so make sure to check both the busy
 			 * indication and the card state.
 			 */
-		    //ruanmeisi_20100618
-            if(time_after(jiffies, last_jiffies + 10 * HZ)) {
-			    printk(KERN_ERR "rms:%s: card in programm state: %ld jiffies\n",
-			       req->rq_disk->disk_name,
-			       jiffies - last_jiffies);
-			    sd_in_programm_state = 1;
-			    return MMC_BLK_CMD_ERR;
-		    }
-			//end
 		} while (!(status & R1_READY_FOR_DATA) ||
 			 (R1_CURRENT_STATE(status) == R1_STATE_PRG));
 	}
@@ -1922,12 +1907,6 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 		}
 		mmc_blk_clear_packed(mq_rq);
 	}
-	if (sd_in_programm_state && mmc_card_sd(card)) {
-		power_off_on_host(card->host);
-	}
-    
-    sd_in_programm_state = 0;
-    
 
  start_new_req:
 	if (rqc) {

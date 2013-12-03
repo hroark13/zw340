@@ -43,11 +43,6 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
-#ifdef CONFIG_BCM_WIFI
-//#ifdef NODEF
-#include "../host/msm_sdcc.h"
-#endif
-
 /*
  * The Background operations can take a long time, depends on the house keeping
  * operations the card has to perform
@@ -1992,15 +1987,11 @@ int mmc_can_reset(struct mmc_card *card)
 {
 	u8 rst_n_function;
 
-	if (mmc_card_sdio(card))
+	if (!mmc_card_mmc(card))
 		return 0;
-
-	if (mmc_card_mmc(card)) {
-		rst_n_function = card->ext_csd.rst_n_function;
-		if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) !=
-		    EXT_CSD_RST_N_ENABLED)
-			return 0;
-	}
+	rst_n_function = card->ext_csd.rst_n_function;
+	if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) != EXT_CSD_RST_N_ENABLED)
+		return 0;
 	return 1;
 }
 EXPORT_SYMBOL(mmc_can_reset);
@@ -2073,8 +2064,6 @@ EXPORT_SYMBOL(mmc_hw_reset_check);
 
 static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 {
-    int err=0;
-  
 	host->f_init = freq;
 
 #ifdef CONFIG_MMC_DEBUG
@@ -2103,27 +2092,23 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	mmc_send_if_cond(host, host->ocr_avail);
 
 	/* Order's important: probe SDIO, then SD, then MMC */
-	err=mmc_attach_sdio(host);
-	if (!err)
+	if (!mmc_attach_sdio(host))
 		return 0;
 
 	if (!host->ios.vdd)
 		mmc_power_up(host);
 
-       err=mmc_attach_sd(host);
-	if (!err)
+	if (!mmc_attach_sd(host))
 		return 0;
 
 	if (!host->ios.vdd)
 		mmc_power_up(host);
 
-       err=mmc_attach_mmc(host);
-	if (!err)
+	if (!mmc_attach_mmc(host))
 		return 0;
 
 	mmc_power_off(host);
-	//return -EIO;
-	return err;
+	return -EIO;
 }
 
 int _mmc_detect_card_removed(struct mmc_host *host)
@@ -2187,13 +2172,6 @@ void mmc_rescan(struct work_struct *work)
 		container_of(work, struct mmc_host, detect.work);
 	bool extend_wakelock = false;
 
-    int err= 0;
-
-#ifdef CONFIG_MMC_PARANOID_SD_INIT
-	int retries = 2;
-#endif
-
-
 	if (host->rescan_disable)
 		return;
 
@@ -2243,23 +2221,12 @@ void mmc_rescan(struct work_struct *work)
 	if (host->ops->get_cd && host->ops->get_cd(host) == 0)
 		goto out;
 
-retry:
 	mmc_claim_host(host);
-	err=mmc_rescan_try_freq(host, host->f_min);
-	if (!err)
+	if (!mmc_rescan_try_freq(host, host->f_min))
 		extend_wakelock = true;
 	mmc_release_host(host);
 
  out:
-#ifdef CONFIG_MMC_PARANOID_SD_INIT
-	if (err && (err != -ENOMEDIUM) && retries) {
-		printk(KERN_INFO "%s: Re-scan card rc = %d (retries = %d)\n",
-			mmc_hostname(host), err, retries);
-		retries--;
-		goto retry;
-	}
-#endif
-	
 	if (extend_wakelock)
 		wake_lock_timeout(&host->detect_wake_lock, HZ / 2);
 	else
@@ -2272,20 +2239,8 @@ retry:
 
 void mmc_start_host(struct mmc_host *host)
 {
-#ifdef CONFIG_BCM_WIFI
-//#ifdef NODEF
-	struct msmsdcc_host *sdcc_host = NULL;
-#endif
-
 	mmc_power_off(host);
-#if defined(CONFIG_BCM_WIFI)
-//#ifdef NODEF
-	sdcc_host = mmc_priv(host);
-	if(sdcc_host->pdev_id != 3)
 	mmc_detect_change(host, 0);
-#else
-	mmc_detect_change(host, 0);
-#endif
 }
 
 void mmc_stop_host(struct mmc_host *host)
@@ -2718,49 +2673,6 @@ void mmc_set_embedded_sdio_data(struct mmc_host *host,
 EXPORT_SYMBOL(mmc_set_embedded_sdio_data);
 #endif
 
-//ruanmeisi_091224
-void power_off_on_host(struct mmc_host *host);
-void mmc_redetect_card(struct mmc_host *host)
-{
-
-	if (NULL == host) {
-		return ;
-	}
-	printk(KERN_ERR"%s:line:%d %s\n", mmc_hostname(host), __LINE__, __FUNCTION__);
-	power_off_on_host(host);
-	//mmc_stop_host(host);
-	//mmc_start_host(host);
-}
-
-EXPORT_SYMBOL(mmc_redetect_card);
-
-int queue_redetect_work(struct work_struct *work)
-{
-	return queue_work(workqueue, work);
-}
-EXPORT_SYMBOL(queue_redetect_work);
-
-//ruanmeisi_20100702
-void power_off_on_host(struct mmc_host *host)
-{
-	mmc_claim_host(host);
-	mmc_power_off(host);
-	msleep(1000);
-	mmc_power_up(host);
-	mmc_release_host(host);
-}
-
-EXPORT_SYMBOL(power_off_on_host);
-void power_off_on_host_nolock(struct mmc_host *host)
-{
-
-	mmc_power_off(host);
-	msleep(1000);
-	mmc_power_up(host);
-
-}
-EXPORT_SYMBOL(power_off_on_host_nolock);
-//end
 static int __init mmc_init(void)
 {
 	int ret;

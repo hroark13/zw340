@@ -417,20 +417,6 @@ struct msmsdcc_host {
 	struct device_attribute	polling;
 	struct device_attribute idle_timeout;
 	struct device_attribute auto_cmd19_attr;
-
-    //ruanmeisi
-	struct timer_list polling_timer;
-	int              enable_polling_timer;
-	//end
-        struct device_attribute	inserted;
-    //ruanmeisi_091224 redetect worker
-	struct work_struct	redetect;
-
-	//ruanmeisi_20100618
-
-	struct workqueue_struct   *workqueue;
-	struct delayed_work	cmd_timeout_work;
-	struct mmc_request	*timeout_mrq;
 };
 
 #define MSMSDCC_VERSION_MASK	0xFFFF

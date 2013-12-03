@@ -18,7 +18,6 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
-#include <linux/export.h>
 
 #include "core.h"
 #include "bus.h"
@@ -1334,12 +1333,3 @@ err:
 	return err;
 }
 
-int mmc_sd_reinit_card(struct mmc_host *host)
-{
-	if (NULL == host) {
-		return -1;
-	}
-	return  mmc_sd_init_card(host, host->ocr, host->card);
-	//return  mmc_sd_init_card(host, ocr,  oldcard);
-}
-EXPORT_SYMBOL(mmc_sd_reinit_card);

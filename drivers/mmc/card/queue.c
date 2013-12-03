@@ -15,9 +15,7 @@
 #include <linux/freezer.h>
 #include <linux/kthread.h>
 #include <linux/scatterlist.h>
-#include <linux/delay.h>
 
-#include <linux/mmc/mmc.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
 #include "queue.h"
@@ -55,32 +53,7 @@ static int mmc_prep_request(struct request_queue *q, struct request *req)
 
 	return BLKPREP_OK;
 }
-//ruanmeisi_20100603
-int mmc_send_status(struct mmc_card *card, u32 *status);
 
-int remove_all_req(struct mmc_queue *mq)
-{
-	int i = 0;
-	struct request_queue *q = mq->queue;
-	struct request *req = NULL;
-	if (NULL == mq) {
-		return 0;
-	}
-	spin_lock_irq(q->queue_lock);
-	while ((req = blk_fetch_request(q)) != NULL) {
-		int ret = 0;
-		do {
-			req->cmd_flags |= REQ_QUIET;
-			ret = __blk_end_request(req, -EIO,
-						blk_rq_cur_bytes(req));
-		} while (ret);
-		i ++;
-	}
-	spin_unlock_irq(q->queue_lock);
-
-	printk(KERN_ERR"rms:%s %d req %d\n", __FUNCTION__, __LINE__, i);
-	return i;
-}
 static int mmc_queue_thread(void *d)
 {
 	struct mmc_queue *mq = d;
@@ -94,12 +67,6 @@ static int mmc_queue_thread(void *d)
 		struct mmc_queue_req *tmp;
 		req = NULL;	/* Must be set to NULL at each iteration */
 
-		//ruanmeisi_20100603
-		if (kthread_should_stop()) {
-			remove_all_req(mq);
-			break;
-		}
-		//end
 		spin_lock_irq(q->queue_lock);
 		set_current_state(TASK_INTERRUPTIBLE);
 		req = blk_fetch_request(q);

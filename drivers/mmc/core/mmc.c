@@ -42,6 +42,20 @@ static const unsigned int tacc_mant[] = {
 	35,	40,	45,	50,	55,	60,	70,	80,
 };
 
+/* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file start */
+#define SAMSUNG_EMMC_MANUFACTURER_ID   0x15
+#define HYNIX_EMMC_MANUFACTURER_ID     0x90
+
+#include <linux/proc_fs.h>
+static struct proc_dir_entry * d_entry;
+static char emmc_module_name[52]={"0"};
+void init_emmc_info_proc(struct mmc_host *host);
+void deinit_emmc_info_proc(void);
+static int msm_emmc_info_read_samsung_proc(char *page, char **start, off_t off, int count, int *eof, void *data);
+static int msm_emmc_info_read_hynix_proc(char *page, char **start, off_t off, int count, int *eof, void *data);
+/* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file end */
+
+
 #define UNSTUFF_BITS(resp,start,size)					\
 	({								\
 		const int __size = size;				\
@@ -629,84 +643,6 @@ MMC_DEV_ATTR(enhanced_area_offset, "%llu\n",
 		card->ext_csd.enhanced_area_offset);
 MMC_DEV_ATTR(enhanced_area_size, "%u\n", card->ext_csd.enhanced_area_size);
 
-//add by ssy@03-14-2011: export emmc infomation for e-mode...
-typedef struct _mmc_manf_info {
-	int id;
-	char *name;
-} mmc_manf_info;
-
-mmc_manf_info man_list[] = {
-	{0x02, "Sandisk"},
-	{0x11, "Toshiba"},
-	{0x13, "Micro"},
-	{0x15, "Sumsung"},
-	{0x45, "Sandisk"},
-	{0x46, "Kingstone"},
-	{0x90, "Hynix"},
-};
-
-
-static ssize_t mmc_info_show(struct device *dev, struct device_attribute *attr, char *buf)	
-{										
-	struct mmc_card *card = container_of(dev, struct mmc_card, dev);	
-	int card_block_size = 512; //fixme...
-	char *memtype = "UNKNOWN";
-	char *manfname = "UNKNOWN";
-	int i = 0;
-	
-	switch (card->type) {
-	case MMC_TYPE_MMC:
-		memtype = "MMC";
-		break;
-		
-	case MMC_TYPE_SD:
-		memtype = "SD";
-		break;
-		
-
-	case MMC_TYPE_SDIO:
-		memtype = "SDIO";
-		break;
-		
-	default:
-		memtype = "UNKNOWN";
-		break;
-	}
-	
-	for (i = 0; i < ARRAY_SIZE(man_list); i++) {
-		if (man_list[i].id == card->cid.manfid) {
-			manfname = man_list[i].name;
-			break;
-		}
-	}
-	
-	return sprintf(buf, "Memory Type: %s\n"
-		       "Size(sectors): %u\n"
-		       "Block Length (bytes): %d\n"
-		       "Size (kB): %u\n"
-		       "Manufacture ID: 0x%06x(%s)\n"
-		       "OEM/Application ID: 0x%04x\n"
-		       "Product Name: %s\n"
-		       "Product serial #: 0x%08x\n"
-		       "FirmWare Revision: 0x%x\n"
-		       "HardWare Revision: 0x%x\n"
-		       "Manufacturing Date: %02d/%04d\n", 
-		       memtype, 
-		       card->ext_csd.sectors,
-		       card_block_size,
-		       (card->ext_csd.sectors / 1024) * card_block_size,
-		       card->cid.manfid, manfname,
-		       card->cid.oemid, 
-		       card->cid.prod_name, 
-		       card->cid.serial,
-		       card->cid.fwrev, 
-		       card->cid.hwrev,
-		       card->cid.month, card->cid.year);
-}
-
-static DEVICE_ATTR(info, S_IRUGO, mmc_info_show, NULL);
-//end
-
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_cid.attr,
 	&dev_attr_csd.attr,
@@ -721,7 +657,6 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_enhanced_area_offset.attr,
 	&dev_attr_enhanced_area_size.attr,
-        &dev_attr_info.attr,
 	NULL,
 };
 
@@ -737,6 +672,65 @@ static const struct attribute_group *mmc_attr_groups[] = {
 static struct device_type mmc_type = {
 	.groups = mmc_attr_groups,
 };
+
+/* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file start */
+static int msm_emmc_info_read_samsung_proc(
+        char *page, char **start, off_t off, int count, int *eof, void *data)
+{
+    int len = 0;
+    printk("WJP:enter msm_emmc_info_read_samsung_proc \n");
+    strcpy(emmc_module_name,"SAMSUNG KMSJS000KM 4G eMMC");
+    len = sprintf(page, "%s\n", emmc_module_name);
+    return len;   
+}
+
+static int msm_emmc_info_read_hynix_proc(
+        char *page, char **start, off_t off, int count, int *eof, void *data)
+{
+    int len = 0;
+    printk("WJP:enter msm_emmc_info_read_hynix_proc \n");
+    strcpy(emmc_module_name,"HYNIX H9DP32A4JJMCGR 4G eMMC");
+    len = sprintf(page, "%s\n", emmc_module_name);
+    return len;   
+}
+    
+void init_emmc_info_proc(struct mmc_host *host)
+{
+    printk("WJP:enter init_emmc_info_proc \n");
+
+    d_entry = create_proc_entry("driver/emmc", 0, NULL);
+    
+    if (d_entry) 
+    {
+        if(host->card->cid.manfid == SAMSUNG_EMMC_MANUFACTURER_ID)
+        {
+            d_entry->read_proc = msm_emmc_info_read_samsung_proc;   
+        }
+        else if(host->card->cid.manfid == HYNIX_EMMC_MANUFACTURER_ID)
+        {
+            d_entry->read_proc = msm_emmc_info_read_hynix_proc;
+        }
+		else /* default display samsung eMMC, need to be update while use other manfacturer eMMC */
+        {
+            d_entry->read_proc = msm_emmc_info_read_samsung_proc;   
+        }
+        
+        d_entry->data = NULL;
+    }
+    
+    return;
+}
+
+void deinit_emmc_info_proc(void)
+{
+	if (NULL != d_entry) {
+		remove_proc_entry("driver/emmc", NULL);
+		d_entry = NULL;
+	}
+    return;	
+}
+/* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file end */
+
 
 /*
  * Select the PowerClass for the current bus width
@@ -987,6 +981,18 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 
 		mmc_set_bus_mode(host, MMC_BUSMODE_PUSHPULL);
 	}
+
+    /* [ECID:000000] ZTEBSP wangjianping, 20121022 modified for hynix 4+4 eMMC driver, start */
+    if (oldcard){
+        if (card->cid.manfid == HYNIX_EMMC_MANUFACTURER_ID){
+                printk("%s is the hynix emmc\n",mmc_hostname(card->host));
+    			mmc_delay(100);
+                mmc_set_timing(card->host, MMC_TIMING_MMC_HS);
+                mmc_set_clock(host, 24576000);
+                mmc_delay(100);
+        }
+    }
+    /* [ECID:000000] ZTEBSP wangjianping, 20121022 modified for hynix 4+4 eMMC driver, end */
 
 	if (!oldcard) {
 		/*
@@ -1633,6 +1639,9 @@ int mmc_attach_mmc(struct mmc_host *host)
 {
 	int err;
 	u32 ocr;
+    /* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file start */
+    static bool emmc_proc_init = false;
+    /* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file end */
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -1685,6 +1694,13 @@ int mmc_attach_mmc(struct mmc_host *host)
 	err = mmc_init_card(host, host->ocr, NULL);
 	if (err)
 		goto err;
+
+    /* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file start */
+    if(false == emmc_proc_init){
+        init_emmc_info_proc(host);
+        emmc_proc_init = true;
+    }
+    /* [ECID:000000] ZTEBSP wangjianping 20120510 record eMMC info into /proc/driver/emmc file end */
 
 	mmc_release_host(host);
 	err = mmc_add_card(host->card);
