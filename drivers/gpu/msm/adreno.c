@@ -335,6 +335,14 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 				device->mmu.setstate_memory.gpuaddr +
 				KGSL_IOMMU_SETSTATE_NOP_OFFSET);
 		}
+		/* invalidate all base pointers */
+		*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
+		*cmds++ = 0x7fff;
+
+		if (flags & KGSL_MMUFLAGS_TLBFLUSH)
+			cmds += __adreno_add_idle_indirect_cmds(cmds,
+				device->mmu.setstate_memory.gpuaddr +
+				KGSL_IOMMU_SETSTATE_NOP_OFFSET);
 	}
 	if (flags & KGSL_MMUFLAGS_TLBFLUSH) {
 		/*
@@ -381,10 +389,6 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 
 	sizedwords += (cmds - &link[0]);
 	if (sizedwords) {
-		/* invalidate all base pointers */
-		*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
-		*cmds++ = 0x7fff;
-		sizedwords += 2;
 		/*
 		 * add an interrupt at the end of commands so that the smmu
 		 * disable clock off function will get called
@@ -539,7 +543,7 @@ a3xx_getchipid(struct kgsl_device *device)
 
 	unsigned int version = socinfo_get_version();
 
-	if (cpu_is_apq8064() || cpu_is_apq8064ab()) {
+	if (cpu_is_apq8064()) {
 
 		/* A320 */
 		majorid = 2;
@@ -550,15 +554,11 @@ a3xx_getchipid(struct kgsl_device *device)
 		 * up to user space via the patchid
 		 */
 
-		if (SOCINFO_VERSION_MAJOR(version) == 2) {
-			patchid = 2;
-		} else {
-			if ((SOCINFO_VERSION_MAJOR(version) == 1) &&
-				(SOCINFO_VERSION_MINOR(version) == 1))
-					patchid = 1;
-			else
-					patchid = 0;
-		}
+		if ((SOCINFO_VERSION_MAJOR(version) == 1) &&
+			(SOCINFO_VERSION_MINOR(version) == 1))
+			patchid = 1;
+		else
+			patchid = 0;
 	} else if (cpu_is_msm8930() || cpu_is_msm8930aa() || cpu_is_msm8627()) {
 
 		/* A305 */
@@ -625,8 +625,8 @@ a2xx_getchipid(struct kgsl_device *device)
 static unsigned int
 adreno_getchipid(struct kgsl_device *device)
 {
-	if (cpu_is_apq8064() || cpu_is_apq8064ab() || cpu_is_msm8930() ||
-		cpu_is_msm8930aa() || cpu_is_msm8627())
+	if (cpu_is_apq8064() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
+	    cpu_is_msm8627())
 		return a3xx_getchipid(device);
 	else
 		return a2xx_getchipid(device);
@@ -1670,9 +1670,6 @@ unsigned int adreno_hang_detect(struct kgsl_device *device,
 	unsigned int i;
 
 	if (!adreno_dev->fast_hang_detect)
-		return 0;
-
-	if (device->ftbl->isidle(device))
 		return 0;
 
 	for (i = 0; i < hang_detect_regs_count; i++) {
